@@ -1,5 +1,6 @@
 # tests/test_hooks.py
 """Tests for the SessionStart hook integration."""
+
 from __future__ import annotations
 
 import json

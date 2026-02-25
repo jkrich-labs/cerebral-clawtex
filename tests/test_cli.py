@@ -1,5 +1,6 @@
 # tests/test_cli.py
 """Tests for CLI commands via typer.testing.CliRunner."""
+
 from __future__ import annotations
 
 import json
@@ -232,9 +233,7 @@ class TestMemoriesCommand:
         assert result.exit_code == 0
         assert "no memory files" in result.output.lower() or "no memories" in result.output.lower()
 
-    def test_memories_with_project_files(
-        self, mock_config: ClawtexConfig, mock_store: MemoryStore
-    ):
+    def test_memories_with_project_files(self, mock_config: ClawtexConfig, mock_store: MemoryStore):
         """memories command shows project memory files."""
         mock_store.write_memory_summary("-proj-test", "# Test Summary\n\nSome content here.")
         mock_store.write_memory_md("-proj-test", "# Memory\n\n- Learning one")
@@ -246,9 +245,7 @@ class TestMemoriesCommand:
             result = runner.invoke(app, ["memories"])
         assert result.exit_code == 0
 
-    def test_memories_global_flag(
-        self, mock_config: ClawtexConfig, mock_store: MemoryStore
-    ):
+    def test_memories_global_flag(self, mock_config: ClawtexConfig, mock_store: MemoryStore):
         """memories command --global shows global memory files."""
         mock_store.write_memory_summary(None, "# Global Summary")
 
@@ -257,9 +254,7 @@ class TestMemoriesCommand:
         assert result.exit_code == 0
         assert "Global" in result.output or "global" in result.output.lower()
 
-    def test_memories_full_flag(
-        self, mock_config: ClawtexConfig, mock_store: MemoryStore
-    ):
+    def test_memories_full_flag(self, mock_config: ClawtexConfig, mock_store: MemoryStore):
         """memories command --full shows MEMORY.md and rollout summaries."""
         mock_store.write_memory_summary("-proj-test", "# Summary")
         mock_store.write_memory_md("-proj-test", "# Detailed Memory\n\n- Item one")
