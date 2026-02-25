@@ -368,42 +368,108 @@ def config_cmd(
     console.print(f"[cyan]projects.exclude[/cyan] = {config.projects.exclude}")
 
 
+CLAWTEX_HOOK_ENTRY = {
+    "matcher": "startup",
+    "hooks": [
+        {
+            "type": "command",
+            "command": "clawtex hook session-start",
+            "timeout": 10,
+        }
+    ],
+}
+
+
+def _is_clawtex_hook(entry: dict) -> bool:
+    """Check if a hook entry is the clawtex hook."""
+    hooks = entry.get("hooks", [])
+    return any(
+        isinstance(h, dict) and "clawtex" in h.get("command", "")
+        for h in hooks
+    )
+
+
+def _read_settings(settings_path: Path) -> dict:
+    """Read Claude Code settings.json, returning empty dict if missing."""
+    if settings_path.exists():
+        return json.loads(settings_path.read_text(encoding="utf-8"))
+    return {}
+
+
+def _write_settings(settings_path: Path, settings: dict) -> None:
+    """Write Claude Code settings.json, creating parent dirs if needed."""
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+
 @app.command()
 def install() -> None:
-    """Register SessionStart hook in Claude Code settings.
-
-    Placeholder — full implementation in T12.
-    """
+    """Register SessionStart hook in Claude Code settings."""
     config = load_config()
 
-    # Ensure directories exist
+    # Create config dir if missing
+    config_dir = Path.home() / ".config" / "cerebral-clawtex"
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create data dir if missing
     config.general.data_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize DB schema
     db = _get_db(config)
     db.close()
 
-    console.print("[green]Install placeholder:[/green] directories created, DB initialized.")
-    console.print("[dim]Full hook registration will be implemented in T12.[/dim]")
+    # Read settings.json (or create if missing)
+    settings_path = config.general.claude_home / "settings.json"
+    settings = _read_settings(settings_path)
+
+    # Ensure hooks structure exists
+    if "hooks" not in settings:
+        settings["hooks"] = {}
+    if "SessionStart" not in settings["hooks"]:
+        settings["hooks"]["SessionStart"] = []
+
+    # Check if clawtex hook already registered
+    session_start_hooks = settings["hooks"]["SessionStart"]
+    already_installed = any(_is_clawtex_hook(entry) for entry in session_start_hooks)
+
+    if not already_installed:
+        session_start_hooks.append(CLAWTEX_HOOK_ENTRY)
+
+    # Write back settings.json
+    _write_settings(settings_path, settings)
+
+    console.print("[green]Installed:[/green] directories created, DB initialized, hook registered.")
+    if already_installed:
+        console.print("[dim]Hook was already registered.[/dim]")
 
 
 @app.command()
 def uninstall(
     purge: bool = typer.Option(False, "--purge", help="Also remove all data"),
 ) -> None:
-    """Remove hooks. --purge also removes all data.
-
-    Placeholder — full implementation in T12.
-    """
+    """Remove clawtex hook from Claude Code settings. --purge also removes all data."""
     config = load_config()
+
+    # Read settings.json
+    settings_path = config.general.claude_home / "settings.json"
+    settings = _read_settings(settings_path)
+
+    # Remove only the clawtex hook entry, preserve others
+    if "hooks" in settings and "SessionStart" in settings["hooks"]:
+        original_hooks = settings["hooks"]["SessionStart"]
+        settings["hooks"]["SessionStart"] = [
+            entry for entry in original_hooks if not _is_clawtex_hook(entry)
+        ]
+        # Write back settings.json
+        _write_settings(settings_path, settings)
+
+    console.print("[green]Uninstalled:[/green] clawtex hook removed from settings.json.")
 
     if purge:
         data_dir = config.general.data_dir
         if data_dir.exists():
             shutil.rmtree(data_dir)
             console.print(f"[red]Purged data directory:[/red] {data_dir}")
-
-    console.print("[green]Uninstall placeholder:[/green] hook removal will be implemented in T12.")
 
 
 @app.command()
