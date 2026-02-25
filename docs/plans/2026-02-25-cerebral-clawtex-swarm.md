@@ -457,9 +457,9 @@ T0 ──┬── T1 ──┐
   - Install tests pass
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_cli.py -v -k install && uv run ruff check src/cerebral_clawtex/cli.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["Replaced placeholder install/uninstall commands with full implementations. Install: creates config dir, data dir, initializes SQLite schema, reads/creates ~/.claude/settings.json, merges SessionStart hook entry (matcher: startup, command: clawtex hook session-start, timeout: 10), preserves existing hooks, writes back settings.json, idempotent (detects already-installed hook). Uninstall: reads settings.json, removes only clawtex hook entries (via _is_clawtex_hook detection), preserves other hooks and settings, --purge removes data directory. Added helper functions: CLAWTEX_HOOK_ENTRY constant, _is_clawtex_hook(), _read_settings(), _write_settings(). Replaced 3 placeholder tests with 11 comprehensive tests: fresh install (no settings.json), install creates data dir, install initializes DB, install with existing hooks preserves them, install idempotent, install with no hooks key in settings, uninstall removes clawtex hook, uninstall preserves other hooks, uninstall handles missing settings.json, uninstall --purge removes data, uninstall --purge handles non-existent data dir. All 35 CLI tests pass, ruff check clean."]
+- **files_edited**: ["src/cerebral_clawtex/cli.py", "tests/test_cli.py"]
 
 ---
 
