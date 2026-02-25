@@ -79,9 +79,9 @@ T0 ──┬── T1 ──┐
   - All 12 tests pass in `tests/test_config.py`
   - `ruff check` and `ruff format` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_config.py -v && uv run ruff check src/cerebral_clawtex/config.py tests/test_config.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["TDD approach: wrote 12 tests first (7 default config tests, 5 TOML loading tests), verified import failure, then implemented config.py with 6 dataclasses (GeneralConfig, Phase1Config, Phase2Config, RedactionConfig, ProjectsConfig, ClawtexConfig) and load_config() with TOML loading via tomllib, section merging, path expansion. All 12 tests pass. ruff check and ruff format clean."]
+- **files_edited**: ["src/cerebral_clawtex/config.py", "tests/test_config.py"]
 
 ---
 
