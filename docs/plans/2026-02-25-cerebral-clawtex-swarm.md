@@ -421,9 +421,9 @@ T0 ──┬── T1 ──┐
   - Tests cover each command via CliRunner
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_cli.py -v && uv run ruff check src/cerebral_clawtex/cli.py tests/test_cli.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["Replaced minimal cli.py (from T0) with full implementation. Implemented 10 CLI commands: status (with --project, --json; queries DB for session counts by status per project with rich table output), extract (with --project, --retry-failed, --json; runs run_phase1 via asyncio.run), consolidate (with --project, --json; runs run_phase2 via asyncio.run), sessions (with --failed, --json; lists recent sessions from DB with rich table), memories (with --full, --global; reads memory files from MemoryStore), config (with --edit; prints resolved config or opens editor), install (placeholder for T12, creates dirs and inits DB), uninstall (with --purge placeholder for T12), hook session-start (subcommand group via hook_app = typer.Typer() + app.add_typer, calls session_start_hook()), reset (with --project, --all; confirmation prompt, clears DB data and filesystem). All commands use load_config(), ClawtexDB, MemoryStore as appropriate. Wrote 27 tests covering all commands via CliRunner. ruff check clean."]
+- **files_edited**: ["src/cerebral_clawtex/cli.py", "tests/test_cli.py"]
 
 ---
 
