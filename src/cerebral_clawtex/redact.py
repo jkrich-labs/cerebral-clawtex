@@ -5,14 +5,36 @@ import re
 
 
 _BUILTIN_PATTERNS: list[tuple[str, str]] = [
-    # API keys
+    # API keys — Anthropic / OpenAI
     (r"sk-(?:proj-|ant-api\d{2}-)?[a-zA-Z0-9_-]{20,}", "api_key"),
+    # AWS access key IDs
     (r"AKIA[0-9A-Z]{16}", "api_key"),
+    # GitHub tokens (PAT, OAuth, fine-grained)
     (r"ghp_[a-zA-Z0-9]{30,}", "api_key"),
     (r"gho_[a-zA-Z0-9]{30,}", "api_key"),
+    (r"ghs_[a-zA-Z0-9]{30,}", "api_key"),
+    (r"ghr_[a-zA-Z0-9]{30,}", "api_key"),
     (r"github_pat_[a-zA-Z0-9_]{22,}", "api_key"),
+    # GitLab personal access tokens
     (r"glpat-[a-zA-Z0-9_-]{20,}", "api_key"),
+    # Slack tokens
     (r"xox[bpors]-[a-zA-Z0-9-]{10,}", "api_key"),
+    # Slack webhook URLs
+    (r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[a-zA-Z0-9]+", "webhook"),
+    # npm tokens
+    (r"npm_[a-zA-Z0-9]{36}", "api_key"),
+    # PyPI tokens
+    (r"pypi-[a-zA-Z0-9_-]{100,}", "api_key"),
+    # Google API keys
+    (r"AIza[a-zA-Z0-9_-]{35}", "api_key"),
+    # Stripe keys
+    (r"(?:sk|pk)_(?:test|live)_[a-zA-Z0-9]{20,}", "api_key"),
+    # Twilio keys
+    (r"SK[a-f0-9]{32}", "api_key"),
+    # SendGrid keys
+    (r"SG\.[a-zA-Z0-9_-]{22,}\.[a-zA-Z0-9_-]{22,}", "api_key"),
+    # Azure storage keys (base64, typically 88 chars)
+    (r"""(?i)(?:AccountKey|azure[_-]?(?:storage[_-]?)?key)\s*[=:]\s*["']?([a-zA-Z0-9+/=]{44,})["']?""", "api_key"),
     # Bearer tokens
     (r"Bearer\s+[a-zA-Z0-9._-]{20,}", "token"),
     # Connection strings
@@ -63,7 +85,7 @@ class Redactor:
                 def _sub(m: re.Match[str], cat: str = category) -> str:
                     full = m.group(0)
                     captured = m.group(1)
-                    return full.replace(captured, self._replacement(cat))
+                    return full.replace(captured, self._replacement(cat), 1)
 
                 result = pattern.sub(_sub, result)
             else:

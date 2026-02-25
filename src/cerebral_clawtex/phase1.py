@@ -9,7 +9,6 @@ analysis, and the structured output is stored in both the filesystem and DB.
 from __future__ import annotations
 
 import asyncio
-import importlib.resources
 import json
 import logging
 import uuid
@@ -17,8 +16,9 @@ from pathlib import Path
 
 from litellm import acompletion
 
-from cerebral_clawtex.config import ClawtexConfig, Phase1Config
+from cerebral_clawtex.config import ClawtexConfig, Phase1Config, derive_project_name
 from cerebral_clawtex.db import ClawtexDB
+from cerebral_clawtex.prompts import load_prompt
 from cerebral_clawtex.redact import Redactor
 from cerebral_clawtex.sessions import discover_sessions, parse_session, truncate_content
 from cerebral_clawtex.storage import MemoryStore
@@ -30,19 +30,14 @@ REQUIRED_FIELDS = {"task_outcome", "rollout_slug", "rollout_summary", "raw_memor
 RETRY_NUDGE = "Your response was not valid JSON. Please respond with only valid JSON matching the schema."
 
 
-def _load_prompt(filename: str) -> str:
-    """Load a prompt template from the prompts package via importlib.resources."""
-    return importlib.resources.files("cerebral_clawtex.prompts").joinpath(filename).read_text(encoding="utf-8")
-
-
 def _build_prompts(
     messages: list[dict],
     project_path: str,
     session_id: str,
 ) -> tuple[str, str]:
     """Build system and user prompts from templates and session data."""
-    system_prompt = _load_prompt("phase1_system.md")
-    user_template = _load_prompt("phase1_user.md")
+    system_prompt = load_prompt("phase1_system.md")
+    user_template = load_prompt("phase1_user.md")
 
     # Format the session content as a readable transcript
     content_parts = []
@@ -54,9 +49,7 @@ def _build_prompts(
 
     redacted_session_content = "\n\n".join(content_parts)
 
-    # Derive project name from the encoded path
-    # e.g. "-home-user-myproject" -> "myproject"
-    project_name = project_path.rsplit("-", 1)[-1] if "-" in project_path else project_path
+    project_name = derive_project_name(project_path)
 
     # Simple template substitution (Jinja2-style placeholders)
     user_prompt = user_template.replace("{{ project_name }}", project_name)
@@ -188,9 +181,10 @@ async def extract_session(
             db.release_session(session_id, status="skipped")
             return "skipped"
 
-        # Step 8: Post-scan redaction on output
+        # Step 8: Post-scan redaction on all LLM output fields
         data["rollout_summary"] = redactor.redact(data["rollout_summary"])
         data["raw_memory"] = redactor.redact(data["raw_memory"])
+        data["rollout_slug"] = redactor.redact(data["rollout_slug"])
 
         # Step 9: Write rollout summary
         store.write_rollout_summary(
@@ -220,10 +214,12 @@ async def extract_session(
 
     except Exception as exc:
         logger.error("Failed to extract session %s: %s", session_id, exc)
+        # Redact error message before storing — library exceptions may contain secrets
+        safe_error = redactor.redact(str(exc))[:500]
         db.release_session(
             session_id,
             status="failed",
-            error_message=str(exc),
+            error_message=safe_error,
         )
         return "failed"
 
@@ -263,7 +259,8 @@ async def run_phase1(
         )
 
         if not sessions:
-            return {"extracted": 0, "skipped": 0, "failed": 0}
+            if not retry_failed:
+                return {"extracted": 0, "skipped": 0, "failed": 0}
 
         # Limit sessions per run
         sessions = sessions[: config.phase1.max_sessions_per_run]
@@ -277,6 +274,39 @@ async def run_phase1(
                 file_modified_at=sess["file_modified_at"],
                 file_size_bytes=sess["file_size_bytes"],
             )
+
+        # Re-queue failed sessions for retry
+        if retry_failed:
+            conditions = ["status = 'failed'"]
+            params: list = []
+            if project_path:
+                conditions.append("project_path = ?")
+                params.append(project_path)
+            where = " AND ".join(conditions)
+            params.append(config.phase1.max_sessions_per_run)
+            failed_rows = db.execute(
+                f"SELECT session_id, project_path, session_file, file_modified_at, file_size_bytes "
+                f"FROM sessions WHERE {where} LIMIT ?",
+                tuple(params),
+            ).fetchall()
+            for row in failed_rows:
+                db.execute(
+                    "UPDATE sessions SET status = 'pending', error_message = NULL, "
+                    "locked_by = NULL, locked_at = NULL WHERE session_id = ?",
+                    (row["session_id"],),
+                )
+                # Add to sessions list if not already discovered
+                if not any(s["session_id"] == row["session_id"] for s in sessions):
+                    sessions.append(
+                        {
+                            "session_id": row["session_id"],
+                            "project_path": row["project_path"],
+                            "session_file": row["session_file"],
+                            "file_modified_at": row["file_modified_at"],
+                            "file_size_bytes": row["file_size_bytes"],
+                        }
+                    )
+            db.conn.commit()
 
         # Extract with concurrency control
         semaphore = asyncio.Semaphore(config.phase1.concurrent_extractions)

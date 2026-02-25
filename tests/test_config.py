@@ -1,7 +1,7 @@
 # tests/test_config.py
 from pathlib import Path
 
-from cerebral_clawtex.config import ClawtexConfig, load_config
+from cerebral_clawtex.config import ClawtexConfig, derive_project_name, load_config
 
 
 class TestDefaultConfig:
@@ -32,6 +32,14 @@ class TestDefaultConfig:
     def test_default_redaction_placeholder(self):
         cfg = ClawtexConfig()
         assert cfg.redaction.placeholder == "[REDACTED]"
+
+
+class TestDeriveProjectName:
+    def test_extracts_last_segment(self):
+        assert derive_project_name("-home-user-myproject") == "myproject"
+
+    def test_empty_string_returns_empty(self):
+        assert derive_project_name("") == ""
 
 
 class TestLoadFromToml:

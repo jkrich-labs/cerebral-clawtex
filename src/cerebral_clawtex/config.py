@@ -50,6 +50,29 @@ class ClawtexConfig:
     projects: ProjectsConfig = field(default_factory=ProjectsConfig)
 
 
+def derive_project_name(encoded_path: str) -> str:
+    """Derive a human-readable project name from an encoded project path.
+
+    The encoded path format is like '-home-user-my-project'. We extract
+    the last path component by splitting on the original path separator pattern.
+    """
+    if not encoded_path:
+        return encoded_path
+    # The encoded path was created by replacing '/' with '-', so we need
+    # to find the last real path component. Split by '-' and find the last
+    # non-empty segment that would have been a directory name.
+    # Since paths like /home/user/my-project become -home-user-my-project,
+    # the safest approach is to take the original dir name from the end.
+    # Remove the leading '-' (which was the leading '/'), then take
+    # everything after the last '/' equivalent.
+    parts = encoded_path.lstrip("-").split("-")
+    # For paths like 'home-user-my-project', the project dir was the last
+    # component after the last '/' in the original path. However, we can't
+    # perfectly reconstruct this since hyphens in dir names are ambiguous.
+    # Use the last segment as a reasonable approximation.
+    return parts[-1] if parts else encoded_path
+
+
 def _expand_path(value: str) -> Path:
     return Path(value).expanduser().resolve()
 

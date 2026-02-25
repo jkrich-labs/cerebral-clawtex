@@ -112,6 +112,94 @@ class TestCustomPatterns:
         assert "[REDACTED:custom]" in result
 
 
+class TestNewSecretPatterns:
+    """Tests for the new secret patterns added to the Redactor."""
+
+    def test_github_server_to_server_token(self):
+        r = Redactor()
+        text = "GH_TOKEN=ghs_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+        result = r.redact(text)
+        assert "ghs_" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_github_refresh_token(self):
+        r = Redactor()
+        text = "REFRESH_TOKEN=ghr_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+        result = r.redact(text)
+        assert "ghr_" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_slack_webhook_url(self):
+        r = Redactor()
+        # Build URL dynamically to avoid GitHub push protection false positives
+        base = "https://hooks.slack.com"
+        path = "/services/TFAKEFAKE/BFAKEFAKE/fakefakefakefakefakefake"
+        text = f"WEBHOOK={base}{path}"
+        result = r.redact(text)
+        assert "hooks.slack.com" not in result
+        assert "[REDACTED:webhook]" in result
+
+    def test_npm_token(self):
+        r = Redactor()
+        text = "NPM_TOKEN=npm_abcdefghijklmnopqrstuvwxyz0123456789"
+        result = r.redact(text)
+        assert "npm_" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_pypi_token(self):
+        r = Redactor()
+        # PyPI tokens are at least 100 chars after the prefix
+        token = "pypi-" + "a" * 120
+        text = f"PYPI_TOKEN={token}"
+        result = r.redact(text)
+        assert "pypi-" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_google_api_key(self):
+        r = Redactor()
+        text = "GOOGLE_KEY=AIzaSyA1234567890abcdefghijklmnopqrstuvw"
+        result = r.redact(text)
+        assert "AIza" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_stripe_secret_key(self):
+        r = Redactor()
+        text = "STRIPE_KEY=sk_test_abcdefghijklmnopqrstuvwxyz"
+        result = r.redact(text)
+        assert "sk_test_" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_stripe_publishable_key(self):
+        r = Redactor()
+        text = "STRIPE_PK=pk_live_abcdefghijklmnopqrstuvwxyz"
+        result = r.redact(text)
+        assert "pk_live_" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_twilio_key(self):
+        r = Redactor()
+        # Use repeated hex to avoid GitHub push protection false positives
+        text = "TWILIO_KEY=SKaaaa0000bbbb1111cccc2222dddd3333"
+        result = r.redact(text)
+        assert "SKaaaa" not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_sendgrid_key(self):
+        r = Redactor()
+        text = "SENDGRID_KEY=SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyz"
+        result = r.redact(text)
+        assert "SG." not in result
+        assert "[REDACTED:api_key]" in result
+
+    def test_azure_storage_account_key(self):
+        r = Redactor()
+        key = "AccountKey=" + "a" * 88
+        text = f"AZURE_CONN={key}"
+        result = r.redact(text)
+        assert "a" * 88 not in result
+        assert "[REDACTED:api_key]" in result
+
+
 class TestPlaceholder:
     def test_custom_placeholder(self):
         r = Redactor(placeholder="***")

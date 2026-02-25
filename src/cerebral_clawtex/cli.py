@@ -16,7 +16,7 @@ from rich.table import Table
 
 from cerebral_clawtex.config import ClawtexConfig, load_config
 from cerebral_clawtex.db import ClawtexDB
-from cerebral_clawtex.hooks import session_start_hook
+from cerebral_clawtex.hooks import _resolve_project_path, session_start_hook
 from cerebral_clawtex.phase1 import run_phase1
 from cerebral_clawtex.phase2 import run_phase2
 from cerebral_clawtex.storage import MemoryStore
@@ -56,9 +56,8 @@ def _get_store(config: ClawtexConfig) -> MemoryStore:
 def _resolve_project_from_env() -> str:
     """Resolve project path from CLAUDE_PROJECT_DIR environment variable."""
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")
-    if not project_dir:
-        return ""
-    return project_dir.replace("/", "-")
+    config = load_config()
+    return _resolve_project_path(project_dir, config)
 
 
 def _open_config_in_editor() -> None:

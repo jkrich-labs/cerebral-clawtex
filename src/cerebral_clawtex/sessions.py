@@ -38,10 +38,6 @@ def discover_sessions(
                 continue
 
         for jsonl_file in project_dir.glob("*.jsonl"):
-            # Skip files in subdirectories (subagent sessions)
-            if jsonl_file.parent != project_dir:
-                continue
-
             stat = jsonl_file.stat()
             age = now - stat.st_mtime
 
@@ -88,11 +84,16 @@ def _extract_content_from_message(message: dict) -> str:
     return "\n".join(parts)
 
 
+_MAX_SESSION_FILE_BYTES = 50 * 1024 * 1024  # 50 MB safety limit
+
+
 def parse_session(session_file: Path) -> list[dict]:
     """Parse a session JSONL file into a list of conversation messages."""
     messages = []
 
     try:
+        if session_file.stat().st_size > _MAX_SESSION_FILE_BYTES:
+            return []
         text = session_file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
@@ -152,9 +153,9 @@ def truncate_content(messages: list[dict], max_tokens: int = 80_000) -> list[dic
     if total <= max_tokens:
         return messages
 
-    # Reserve 30% for start, 30% for end, drop middle
-    start_budget = int(max_tokens * 0.3)
-    end_budget = int(max_tokens * 0.3)
+    # Reserve 40% for start (context setup), 40% for end (results/outcomes), ~20% for marker overhead
+    start_budget = int(max_tokens * 0.4)
+    end_budget = int(max_tokens * 0.4)
 
     start_messages = []
     start_used = 0

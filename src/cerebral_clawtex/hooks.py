@@ -9,13 +9,13 @@ When Claude Code starts a new session, it calls this hook which:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
+import subprocess
 import sys
 
-from cerebral_clawtex.config import ClawtexConfig, load_config
+from cerebral_clawtex.config import ClawtexConfig, derive_project_name, load_config
 from cerebral_clawtex.storage import MemoryStore
 
 logger = logging.getLogger(__name__)
@@ -37,9 +37,11 @@ def _resolve_project_path(project_dir: str, config: ClawtexConfig) -> str:
     if not project_dir:
         return ""
 
+    # Normalize path separators to / before encoding (handles Windows backslashes)
+    normalized = project_dir.replace(os.sep, "/")
     # Claude Code encodes project paths by replacing / with -
     # e.g. /home/user/myproject -> -home-user-myproject
-    return project_dir.replace("/", "-")
+    return normalized.replace("/", "-")
 
 
 def _build_navigation_instructions(project_path: str, config: ClawtexConfig) -> str:
@@ -107,7 +109,7 @@ def session_start_hook() -> None:
     if project_path:
         project_summary = store.read_memory_summary(project_path)
         if project_summary:
-            project_name = project_path.split("-")[-1] or project_path
+            project_name = derive_project_name(project_path)
             context_parts.append(f"### Project Memory ({project_name})\n\n{project_summary}")
 
     # Global memory
@@ -138,54 +140,41 @@ def session_start_hook() -> None:
 
 
 def _spawn_background_extraction(config: ClawtexConfig) -> None:
-    """Spawn a detached child process that runs Phase 1 extraction.
+    """Spawn a detached child process that runs Phase 1 (and optionally Phase 2) extraction.
 
-    Uses os.fork() + os.setsid() to fully detach the child process
-    from the parent, so the hook returns immediately while extraction
-    continues in the background.
+    Uses subprocess.Popen with appropriate flags for cross-platform detachment.
 
     Args:
         config: Application configuration
     """
+    cmd = [sys.executable, "-m", "cerebral_clawtex.cli", "extract"]
+    if config.phase2.run_after_phase1:
+        # Run extract then consolidate via a shell command chain
+        cmd = [
+            sys.executable, "-c",
+            "import asyncio; "
+            "from cerebral_clawtex.config import load_config; "
+            "from cerebral_clawtex.phase1 import run_phase1; "
+            "from cerebral_clawtex.phase2 import run_phase2; "
+            "config = load_config(); "
+            "asyncio.run(run_phase1(config)); "
+            "asyncio.run(run_phase2(config))",
+        ]
+
     try:
-        pid = os.fork()
+        kwargs: dict = {}
+        if sys.platform != "win32":
+            kwargs["start_new_session"] = True
+        else:
+            # On Windows, use CREATE_NEW_PROCESS_GROUP to detach
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+
+        subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **kwargs,
+        )
     except OSError:
-        logger.warning("Failed to fork for background extraction")
-        return
-
-    if pid != 0:
-        # Parent process -- return immediately
-        return
-
-    # Child process -- detach from parent
-    try:
-        os.setsid()
-
-        # Close stdin/stdout/stderr to fully detach
-        sys.stdin.close()
-        sys.stdout.close()
-        sys.stderr.close()
-
-        # Redirect to /dev/null
-        devnull_fd = os.open(os.devnull, os.O_RDWR)
-        os.dup2(devnull_fd, 0)
-        os.dup2(devnull_fd, 1)
-        os.dup2(devnull_fd, 2)
-        if devnull_fd > 2:
-            os.close(devnull_fd)
-
-        # Run Phase 1 extraction
-        from cerebral_clawtex.phase1 import run_phase1
-
-        asyncio.run(run_phase1(config))
-
-        # If Phase 2 should run after Phase 1
-        if config.phase2.run_after_phase1:
-            from cerebral_clawtex.phase2 import run_phase2
-
-            asyncio.run(run_phase2(config))
-
-    except Exception:
-        pass
-    finally:
-        os._exit(0)
+        logger.warning("Failed to spawn background extraction process")

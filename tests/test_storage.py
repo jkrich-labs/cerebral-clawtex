@@ -1,7 +1,32 @@
 # tests/test_storage.py
 from pathlib import Path
 
-from cerebral_clawtex.storage import MemoryStore
+import pytest
+
+from cerebral_clawtex.storage import MemoryStore, _sanitize_slug
+
+
+class TestSanitizeSlug:
+    def test_empty_string_returns_unnamed(self):
+        assert _sanitize_slug("") == "unnamed"
+
+    def test_all_special_chars_returns_unnamed(self):
+        assert _sanitize_slug("!!!") == "unnamed"
+
+    def test_dots_are_stripped(self):
+        result = _sanitize_slug("some..path")
+        assert "." not in result
+
+    def test_normal_slug_preserved(self):
+        result = _sanitize_slug("fix-the-bug")
+        assert result == "fix-the-bug"
+
+
+class TestProjectPathTraversal:
+    def test_path_traversal_raises_value_error(self, tmp_data_dir: Path):
+        store = MemoryStore(tmp_data_dir)
+        with pytest.raises(ValueError, match="escape data directory"):
+            store.project_dir("../../etc")
 
 
 class TestProjectPaths:

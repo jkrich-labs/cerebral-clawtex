@@ -251,88 +251,42 @@ class TestBuildNavigationInstructions:
 class TestSpawnBackgroundExtraction:
     """Tests for _spawn_background_extraction()."""
 
-    def test_spawn_forks_and_detaches(self, tmp_data_dir: Path, monkeypatch):
-        """Background extraction uses os.fork() and os.setsid() to detach."""
+    def test_spawn_uses_subprocess_popen(self, tmp_data_dir: Path, monkeypatch):
+        """Background extraction uses subprocess.Popen to spawn a detached process."""
         config = ClawtexConfig(general=GeneralConfig(data_dir=tmp_data_dir))
 
-        fork_called = False
-        setsid_called = False
+        popen_called = False
+        popen_kwargs: dict = {}
 
-        def mock_fork():
-            nonlocal fork_called
-            fork_called = True
-            # Return non-zero (parent process)
-            return 1
+        class MockPopen:
+            def __init__(self, cmd, **kwargs):
+                nonlocal popen_called, popen_kwargs
+                popen_called = True
+                popen_kwargs = kwargs
 
-        def mock_setsid():
-            nonlocal setsid_called
-            setsid_called = True
-
-        monkeypatch.setattr("os.fork", mock_fork)
-        monkeypatch.setattr("os.setsid", mock_setsid)
+        monkeypatch.setattr("cerebral_clawtex.hooks.subprocess.Popen", MockPopen)
 
         from cerebral_clawtex.hooks import _spawn_background_extraction
 
         _spawn_background_extraction(config)
 
-        assert fork_called
-        # setsid is called in the child (pid == 0), not in parent
-        assert not setsid_called
+        assert popen_called
+        import subprocess
 
-    def test_spawn_child_process(self, tmp_data_dir: Path, monkeypatch):
-        """In the child process (fork returns 0), setsid is called and extraction runs."""
+        assert popen_kwargs.get("stdin") == subprocess.DEVNULL
+        assert popen_kwargs.get("stdout") == subprocess.DEVNULL
+        assert popen_kwargs.get("stderr") == subprocess.DEVNULL
+
+    def test_spawn_handles_os_error(self, tmp_data_dir: Path, monkeypatch):
+        """Background extraction handles OSError gracefully."""
         config = ClawtexConfig(general=GeneralConfig(data_dir=tmp_data_dir))
 
-        call_log: list[str] = []
+        def mock_popen(*args, **kwargs):
+            raise OSError("spawn failed")
 
-        def mock_fork():
-            call_log.append("fork")
-            return 0  # child process
-
-        def mock_setsid():
-            call_log.append("setsid")
-
-        def mock_exit(code):
-            call_log.append(f"exit:{code}")
-            raise SystemExit(code)
-
-        def mock_run(coro):
-            call_log.append("asyncio.run")
-            # Close the coroutine to avoid RuntimeWarning
-            coro.close()
-
-        # Prevent actual stdout/stderr closing which breaks pytest
-        def mock_close():
-            call_log.append("close")
-
-        import io
-
-        monkeypatch.setattr("os.fork", mock_fork)
-        monkeypatch.setattr("os.setsid", mock_setsid)
-        monkeypatch.setattr("os._exit", mock_exit)
-        monkeypatch.setattr("asyncio.run", mock_run)
-
-        # Replace sys.stdin/stdout/stderr with mock streams that don't actually close
-        mock_stdin = io.StringIO()
-        mock_stdout = io.StringIO()
-        mock_stderr = io.StringIO()
-        monkeypatch.setattr("sys.stdin", mock_stdin)
-        monkeypatch.setattr("sys.stdout", mock_stdout)
-        monkeypatch.setattr("sys.stderr", mock_stderr)
-
-        # Mock os.open, os.dup2, os.close to prevent actual file descriptor manipulation
-        monkeypatch.setattr("os.open", lambda *a, **kw: 3)
-        monkeypatch.setattr("os.dup2", lambda *a, **kw: None)
-        monkeypatch.setattr("os.close", lambda *a, **kw: None)
+        monkeypatch.setattr("cerebral_clawtex.hooks.subprocess.Popen", mock_popen)
 
         from cerebral_clawtex.hooks import _spawn_background_extraction
 
-        try:
-            _spawn_background_extraction(config)
-        except SystemExit:
-            pass
-
-        assert "fork" in call_log
-        assert "setsid" in call_log
-        assert "asyncio.run" in call_log
-        assert any(c.startswith("exit:") for c in call_log)
+        # Should not raise
+        _spawn_background_extraction(config)

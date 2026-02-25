@@ -8,17 +8,27 @@ from pathlib import Path
 
 
 def _sanitize_slug(slug: str) -> str:
-    """Make a string safe for use as a filename."""
-    slug = re.sub(r"[^\w\-.]", "-", slug)
+    """Make a string safe for use as a filename.
+
+    Strips all characters except word chars and hyphens.
+    Dots are excluded to prevent path traversal via '..' sequences.
+    """
+    slug = re.sub(r"[^\w\-]", "-", slug)
     slug = re.sub(r"-{2,}", "-", slug)
-    return slug.strip("-")[:120]
+    slug = slug.strip("-")[:120]
+    return slug or "unnamed"
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    """Write content to a file atomically via tmp + rename."""
+    """Write content to a file atomically via tmp + rename.
+
+    Files are created with 0o600 permissions (owner-only read/write)
+    to protect potentially sensitive memory content.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
+        os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_path, path)
@@ -39,7 +49,12 @@ class MemoryStore:
         return self.data_dir / "global"
 
     def project_dir(self, project_path: str) -> Path:
-        return self.data_dir / "projects" / project_path
+        result = (self.data_dir / "projects" / project_path).resolve()
+        # Guard against path traversal via crafted project_path values
+        projects_root = (self.data_dir / "projects").resolve()
+        if not str(result).startswith(str(projects_root)):
+            raise ValueError(f"Invalid project path would escape data directory: {project_path}")
+        return result
 
     def _scope_dir(self, project_path: str | None) -> Path:
         if project_path is None:

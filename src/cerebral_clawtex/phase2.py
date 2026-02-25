@@ -8,26 +8,22 @@ Supports both per-project consolidation and global cross-project consolidation.
 
 from __future__ import annotations
 
-import importlib.resources
 import json
 import logging
+import re
 import uuid
 
 from litellm import acompletion
 
-from cerebral_clawtex.config import ClawtexConfig
+from cerebral_clawtex.config import ClawtexConfig, derive_project_name
 from cerebral_clawtex.db import ClawtexDB
+from cerebral_clawtex.prompts import load_prompt
 from cerebral_clawtex.redact import Redactor
 from cerebral_clawtex.storage import MemoryStore
 
 logger = logging.getLogger(__name__)
 
 REQUIRED_FIELDS = {"memory_summary", "memory_md", "skills"}
-
-
-def _load_prompt(filename: str) -> str:
-    """Load a prompt template from the prompts package via importlib.resources."""
-    return importlib.resources.files("cerebral_clawtex.prompts").joinpath(filename).read_text(encoding="utf-8")
 
 
 def _build_project_prompts(
@@ -38,11 +34,10 @@ def _build_project_prompts(
     existing_memory_md: str | None,
 ) -> tuple[str, str]:
     """Build system and user prompts for per-project consolidation."""
-    system_prompt = _load_prompt("phase2_system.md")
-    user_template = _load_prompt("phase2_user.md")
+    system_prompt = load_prompt("phase2_system.md")
+    user_template = load_prompt("phase2_user.md")
 
-    # Derive project name from encoded path
-    project_name = project_path.rsplit("-", 1)[-1] if "-" in project_path else project_path
+    project_name = derive_project_name(project_path)
 
     # Build the user prompt with template substitution
     user_prompt = user_template.replace("{{ mode }}", mode)
@@ -91,8 +86,8 @@ def _build_global_prompts(
     existing_memory_md: str | None,
 ) -> tuple[str, str]:
     """Build system and user prompts for global consolidation."""
-    system_prompt = _load_prompt("phase2_global_system.md")
-    user_template = _load_prompt("phase2_global_user.md")
+    system_prompt = load_prompt("phase2_global_system.md")
+    user_template = load_prompt("phase2_global_user.md")
 
     user_prompt = user_template.replace("{{ mode }}", mode)
 
@@ -131,10 +126,6 @@ def _build_global_prompts(
 
 def _replace_jinja_conditionals(template: str, replacement: str) -> str:
     """Replace Jinja2 {% if %} / {% else %} / {% endif %} blocks with rendered content."""
-    import re
-
-    # Remove everything between {% if ... %} and {% endif %} (including the else block)
-    # and replace with our pre-rendered content
     pattern = r"\{%\s*if\s+.*?%\}.*?\{%\s*endif\s*%\}"
     result = re.sub(pattern, replacement, template, flags=re.DOTALL)
     return result
@@ -142,8 +133,6 @@ def _replace_jinja_conditionals(template: str, replacement: str) -> str:
 
 def _replace_jinja_for_loop(template: str, replacement: str) -> str:
     """Replace Jinja2 {% for %} / {% endfor %} blocks with rendered content."""
-    import re
-
     pattern = r"\{%\s*for\s+.*?%\}.*?\{%\s*endfor\s*%\}"
     result = re.sub(pattern, replacement, template, flags=re.DOTALL)
     return result
@@ -164,6 +153,8 @@ def _redact_response(data: dict, redactor: Redactor) -> dict:
     data["memory_md"] = redactor.redact(data["memory_md"])
 
     for skill in data.get("skills", []):
+        if "name" in skill:
+            skill["name"] = redactor.redact(skill["name"])
         if "skill_md" in skill:
             skill["skill_md"] = redactor.redact(skill["skill_md"])
 
@@ -176,6 +167,7 @@ async def consolidate_project(
     store: MemoryStore,
     config: ClawtexConfig,
     worker_id: str,
+    redactor: Redactor | None = None,
 ) -> bool:
     """Consolidate Phase 1 outputs for a single project.
 
@@ -195,10 +187,11 @@ async def consolidate_project(
     Returns True if consolidation ran, False if skipped.
     """
     scope = f"project:{project_path}"
-    redactor = Redactor(
-        extra_patterns=config.redaction.extra_patterns or None,
-        placeholder=config.redaction.placeholder,
-    )
+    if redactor is None:
+        redactor = Redactor(
+            extra_patterns=config.redaction.extra_patterns or None,
+            placeholder=config.redaction.placeholder,
+        )
 
     # Step 1: Acquire consolidation lock
     if not db.acquire_consolidation_lock(scope, worker_id):
@@ -301,6 +294,8 @@ async def consolidate_project(
 
     except Exception as exc:
         logger.error("Consolidation failed for %s: %s", scope, exc)
+        # Redact error message before storing — library exceptions may contain secrets
+        safe_error = redactor.redact(str(exc))[:500]
         db.record_consolidation_run(
             scope=scope,
             status="failed",
@@ -308,7 +303,7 @@ async def consolidate_project(
             input_watermark=0,
             token_usage_input=0,
             token_usage_output=0,
-            error_message=str(exc),
+            error_message=safe_error,
         )
         return False
 
@@ -322,6 +317,7 @@ async def consolidate_global(
     store: MemoryStore,
     config: ClawtexConfig,
     worker_id: str,
+    redactor: Redactor | None = None,
 ) -> bool:
     """Consolidate all project summaries into global cross-project memory.
 
@@ -332,10 +328,11 @@ async def consolidate_global(
     Returns True if consolidation ran, False if skipped.
     """
     scope = "global"
-    redactor = Redactor(
-        extra_patterns=config.redaction.extra_patterns or None,
-        placeholder=config.redaction.placeholder,
-    )
+    if redactor is None:
+        redactor = Redactor(
+            extra_patterns=config.redaction.extra_patterns or None,
+            placeholder=config.redaction.placeholder,
+        )
 
     # Load project summaries
     projects = store.list_projects()
@@ -344,7 +341,7 @@ async def consolidate_global(
         summary = store.read_memory_summary(proj)
         if summary:
             # Derive project name from the encoded path
-            name = proj.rsplit("-", 1)[-1] if "-" in proj else proj
+            name = derive_project_name(proj)
             project_summaries.append({"name": name, "summary": summary})
 
     if not project_summaries:
@@ -433,6 +430,7 @@ async def consolidate_global(
 
     except Exception as exc:
         logger.error("Global consolidation failed: %s", exc)
+        safe_error = redactor.redact(str(exc))[:500]
         db.record_consolidation_run(
             scope=scope,
             status="failed",
@@ -440,7 +438,7 @@ async def consolidate_global(
             input_watermark=0,
             token_usage_input=0,
             token_usage_output=0,
-            error_message=str(exc),
+            error_message=safe_error,
         )
         return False
 
@@ -471,6 +469,10 @@ async def run_phase2(
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db = ClawtexDB(db_path)
     store = MemoryStore(config.general.data_dir)
+    redactor = Redactor(
+        extra_patterns=config.redaction.extra_patterns or None,
+        placeholder=config.redaction.placeholder,
+    )
 
     try:
         projects_consolidated = 0
@@ -483,6 +485,7 @@ async def run_phase2(
                 store=store,
                 config=config,
                 worker_id=worker_id,
+                redactor=redactor,
             )
             if result:
                 projects_consolidated = 1
@@ -498,6 +501,7 @@ async def run_phase2(
                     store=store,
                     config=config,
                     worker_id=worker_id,
+                    redactor=redactor,
                 )
                 if result:
                     projects_consolidated += 1
@@ -508,6 +512,7 @@ async def run_phase2(
             store=store,
             config=config,
             worker_id=worker_id,
+            redactor=redactor,
         )
 
         return {

@@ -1,7 +1,31 @@
 import time
 from pathlib import Path
 
+import pytest
+
 from cerebral_clawtex.db import ClawtexDB
+
+
+class TestContextManager:
+    def test_with_statement_provides_usable_db(self, tmp_data_dir: Path):
+        db_path = tmp_data_dir / "ctx.db"
+        with ClawtexDB(db_path) as db:
+            db.register_session("s1", "-proj", "/p.jsonl", 1000, 5000)
+            row = db.get_session("s1")
+            assert row is not None
+            assert row["session_id"] == "s1"
+
+    def test_connection_closed_after_exit(self, tmp_data_dir: Path):
+        db_path = tmp_data_dir / "ctx.db"
+        with ClawtexDB(db_path) as db:
+            # db should be usable inside the context
+            db.register_session("s1", "-proj", "/p.jsonl", 1000, 5000)
+
+        # After exiting the context, the connection should be closed
+        import sqlite3
+
+        with pytest.raises(sqlite3.ProgrammingError):
+            db.execute("SELECT 1")
 
 
 class TestSchemaCreation:

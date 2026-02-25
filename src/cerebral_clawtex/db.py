@@ -73,6 +73,12 @@ class ClawtexDB:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self._init_schema()
 
+    def __enter__(self) -> ClawtexDB:
+        return self
+
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> None:
+        self.close()
+
     def _init_schema(self) -> None:
         self.conn.executescript(SCHEMA_SQL)
         row = self.conn.execute("SELECT version FROM schema_version").fetchone()
