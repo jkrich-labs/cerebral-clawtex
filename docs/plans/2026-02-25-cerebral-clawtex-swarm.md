@@ -255,9 +255,9 @@ T0 ──┬── T1 ──┐
   - All tests pass with mocked LiteLLM
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_phase1.py -v && uv run ruff check src/cerebral_clawtex/phase1.py tests/test_phase1.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["TDD approach: wrote 12 tests first (8 extract_session tests covering successful extraction, no-op/skip, invalid JSON retry, double-invalid JSON failure, LLM call exception, claim failure skip, post-scan redaction, missing schema fields; 4 run_phase1 tests covering discovery+extraction, concurrent semaphore, no sessions, mixed results), verified all fail with ImportError. Implemented phase1.py with extract_session() (full 11-step pipeline: claim, parse, redact, truncate, build prompts via importlib.resources, litellm.acompletion with json_object response_format, JSON validation with retry-once on invalid, post-scan redaction, write rollout summary, store phase1 output, release session) and run_phase1() (discovers sessions, registers in DB, extracts concurrently via asyncio.Semaphore). All 12 tests pass, ruff check clean."]
+- **files_edited**: ["src/cerebral_clawtex/phase1.py", "tests/test_phase1.py"]
 
 ---
 
