@@ -5,6 +5,7 @@ Extracts reusable learnings from individual Claude Code sessions using an LLM
 (Haiku by default). Each session is parsed, redacted, sent to the LLM for
 analysis, and the structured output is stored in both the filesystem and DB.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,19 +27,12 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_FIELDS = {"task_outcome", "rollout_slug", "rollout_summary", "raw_memory"}
 
-RETRY_NUDGE = (
-    "Your response was not valid JSON. "
-    "Please respond with only valid JSON matching the schema."
-)
+RETRY_NUDGE = "Your response was not valid JSON. Please respond with only valid JSON matching the schema."
 
 
 def _load_prompt(filename: str) -> str:
     """Load a prompt template from the prompts package via importlib.resources."""
-    return (
-        importlib.resources.files("cerebral_clawtex.prompts")
-        .joinpath(filename)
-        .read_text(encoding="utf-8")
-    )
+    return importlib.resources.files("cerebral_clawtex.prompts").joinpath(filename).read_text(encoding="utf-8")
 
 
 def _build_prompts(
@@ -81,11 +75,7 @@ def _validate_response(data: dict) -> bool:
 
 def _is_noop(data: dict) -> bool:
     """Check if the response is a no-op (empty fields)."""
-    return (
-        not data.get("rollout_slug")
-        and not data.get("rollout_summary")
-        and not data.get("raw_memory")
-    )
+    return not data.get("rollout_slug") and not data.get("rollout_summary") and not data.get("raw_memory")
 
 
 async def extract_session(

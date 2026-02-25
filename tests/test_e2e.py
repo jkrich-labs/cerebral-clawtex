@@ -8,6 +8,7 @@ require API keys.
 Run with: pytest tests/test_e2e.py -v
 Or selectively: pytest -m e2e -v
 """
+
 from __future__ import annotations
 
 import json
@@ -324,9 +325,7 @@ class TestEndToEnd:
         # ---------------------------------------------------------------
         # Step 2: Run Phase 1 extraction (with MOCKED LiteLLM)
         # ---------------------------------------------------------------
-        phase1_mock = AsyncMock(
-            return_value=_make_llm_response(PHASE1_LLM_RESPONSE)
-        )
+        phase1_mock = AsyncMock(return_value=_make_llm_response(PHASE1_LLM_RESPONSE))
 
         with patch("cerebral_clawtex.phase1.acompletion", phase1_mock):
             from cerebral_clawtex.phase1 import run_phase1
@@ -479,8 +478,7 @@ class TestEndToEnd:
             "task_outcome": "success",
             "rollout_slug": "configure-aws-auth",
             "rollout_summary": (
-                "## Session: Configure AWS Auth\n\n"
-                "Used key AKIAIOSFODNN7EXAMPLE for authentication setup."
+                "## Session: Configure AWS Auth\n\nUsed key AKIAIOSFODNN7EXAMPLE for authentication setup."
             ),
             "raw_memory": (
                 "---\n"
@@ -492,9 +490,7 @@ class TestEndToEnd:
             ),
         }
 
-        phase1_mock = AsyncMock(
-            return_value=_make_llm_response(leaky_response)
-        )
+        phase1_mock = AsyncMock(return_value=_make_llm_response(leaky_response))
 
         with patch("cerebral_clawtex.phase1.acompletion", phase1_mock):
             from cerebral_clawtex.phase1 import run_phase1
@@ -531,9 +527,7 @@ class TestEndToEnd:
         _seed_claude_home(claude_home, project_name)
 
         # Run Phase 1 first (clean response)
-        phase1_mock = AsyncMock(
-            return_value=_make_llm_response(PHASE1_LLM_RESPONSE)
-        )
+        phase1_mock = AsyncMock(return_value=_make_llm_response(PHASE1_LLM_RESPONSE))
         with patch("cerebral_clawtex.phase1.acompletion", phase1_mock):
             from cerebral_clawtex.phase1 import run_phase1
 
@@ -541,14 +535,9 @@ class TestEndToEnd:
 
         # Phase 2 with a leaky response
         leaky_phase2_response = {
-            "memory_summary": (
-                "## Summary\n\n"
-                "Use API key sk-proj-abc123def456ghi789jkl012mno for service auth"
-            ),
+            "memory_summary": ("## Summary\n\nUse API key sk-proj-abc123def456ghi789jkl012mno for service auth"),
             "memory_md": (
-                "# Memory\n\n"
-                "## Auth\n\n"
-                "- Configure postgres://admin:supersecretpass@db.example.com:5432/prod for DB"
+                "# Memory\n\n## Auth\n\n- Configure postgres://admin:supersecretpass@db.example.com:5432/prod for DB"
             ),
             "skills": [],
         }
@@ -629,9 +618,7 @@ class TestEndToEnd:
             "raw_memory": "",
         }
 
-        phase1_mock = AsyncMock(
-            return_value=_make_llm_response(noop_response)
-        )
+        phase1_mock = AsyncMock(return_value=_make_llm_response(noop_response))
 
         with patch("cerebral_clawtex.phase1.acompletion", phase1_mock):
             from cerebral_clawtex.phase1 import run_phase1
@@ -688,9 +675,7 @@ class TestEndToEnd:
             old_time = time.time() - 7200
             os.utime(session_path, (old_time, old_time))
 
-        phase1_mock = AsyncMock(
-            return_value=_make_llm_response(PHASE1_LLM_RESPONSE)
-        )
+        phase1_mock = AsyncMock(return_value=_make_llm_response(PHASE1_LLM_RESPONSE))
 
         with patch("cerebral_clawtex.phase1.acompletion", phase1_mock):
             from cerebral_clawtex.phase1 import run_phase1

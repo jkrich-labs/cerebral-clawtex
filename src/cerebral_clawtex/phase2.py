@@ -5,6 +5,7 @@ Consolidates per-session Phase 1 extraction outputs into organized memory files
 (memory_summary.md, MEMORY.md, skills) using an LLM (Sonnet by default).
 Supports both per-project consolidation and global cross-project consolidation.
 """
+
 from __future__ import annotations
 
 import importlib.resources
@@ -26,11 +27,7 @@ REQUIRED_FIELDS = {"memory_summary", "memory_md", "skills"}
 
 def _load_prompt(filename: str) -> str:
     """Load a prompt template from the prompts package via importlib.resources."""
-    return (
-        importlib.resources.files("cerebral_clawtex.prompts")
-        .joinpath(filename)
-        .read_text(encoding="utf-8")
-    )
+    return importlib.resources.files("cerebral_clawtex.prompts").joinpath(filename).read_text(encoding="utf-8")
 
 
 def _build_project_prompts(
@@ -125,10 +122,7 @@ def _build_global_prompts(
     # Build project summaries section
     summaries_section = ""
     for proj in project_summaries:
-        summaries_section += (
-            f"### Project: {proj['name']}\n\n"
-            f"```markdown\n{proj['summary']}\n```\n\n"
-        )
+        summaries_section += f"### Project: {proj['name']}\n\n```markdown\n{proj['summary']}\n```\n\n"
 
     user_prompt = _replace_jinja_for_loop(user_prompt, summaries_section)
 
@@ -494,9 +488,7 @@ async def run_phase2(
                 projects_consolidated = 1
         else:
             # Find all projects with Phase 1 outputs
-            rows = db.execute(
-                "SELECT DISTINCT project_path FROM phase1_outputs"
-            ).fetchall()
+            rows = db.execute("SELECT DISTINCT project_path FROM phase1_outputs").fetchall()
             project_paths = [row["project_path"] for row in rows]
 
             for pp in project_paths:

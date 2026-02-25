@@ -1,5 +1,6 @@
 # src/cerebral_clawtex/cli.py
 """Cerebral Clawtex CLI — full implementation of all commands."""
+
 from __future__ import annotations
 
 import asyncio
@@ -70,8 +71,8 @@ def _open_config_in_editor() -> None:
             "# Cerebral Clawtex configuration\n"
             "# See documentation for available options.\n\n"
             "[general]\n"
-            "# data_dir = \"~/.local/share/cerebral-clawtex\"\n"
-            "# claude_home = \"~/.claude\"\n\n"
+            '# data_dir = "~/.local/share/cerebral-clawtex"\n'
+            '# claude_home = "~/.claude"\n\n'
             "[phase1]\n"
             '# model = "anthropic/claude-haiku-4-5-20251001"\n\n'
             "[phase2]\n"
@@ -168,9 +169,7 @@ def extract(
     """Run Phase 1 extraction on pending sessions."""
     config = load_config()
 
-    result = asyncio.run(
-        run_phase1(config, project_path=project, retry_failed=retry_failed)
-    )
+    result = asyncio.run(run_phase1(config, project_path=project, retry_failed=retry_failed))
 
     if json_output:
         typer.echo(json.dumps(result))
@@ -383,10 +382,7 @@ CLAWTEX_HOOK_ENTRY = {
 def _is_clawtex_hook(entry: dict) -> bool:
     """Check if a hook entry is the clawtex hook."""
     hooks = entry.get("hooks", [])
-    return any(
-        isinstance(h, dict) and "clawtex" in h.get("command", "")
-        for h in hooks
-    )
+    return any(isinstance(h, dict) and "clawtex" in h.get("command", "") for h in hooks)
 
 
 def _read_settings(settings_path: Path) -> dict:
@@ -457,9 +453,7 @@ def uninstall(
     # Remove only the clawtex hook entry, preserve others
     if "hooks" in settings and "SessionStart" in settings["hooks"]:
         original_hooks = settings["hooks"]["SessionStart"]
-        settings["hooks"]["SessionStart"] = [
-            entry for entry in original_hooks if not _is_clawtex_hook(entry)
-        ]
+        settings["hooks"]["SessionStart"] = [entry for entry in original_hooks if not _is_clawtex_hook(entry)]
         # Write back settings.json
         _write_settings(settings_path, settings)
 
@@ -499,8 +493,7 @@ def reset(
             # Reset specific project
             db.execute("DELETE FROM phase1_outputs WHERE project_path = ?", (project,))
             db.execute(
-                "UPDATE sessions SET status = 'pending', locked_by = NULL, locked_at = NULL "
-                "WHERE project_path = ?",
+                "UPDATE sessions SET status = 'pending', locked_by = NULL, locked_at = NULL WHERE project_path = ?",
                 (project,),
             )
             db.conn.commit()

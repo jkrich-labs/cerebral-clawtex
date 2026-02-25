@@ -6,6 +6,7 @@ When Claude Code starts a new session, it calls this hook which:
 1. Injects relevant memory context into the session
 2. Spawns background extraction of previous sessions
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -74,8 +75,7 @@ def _build_navigation_instructions(project_path: str, config: ClawtexConfig) -> 
 
     global_dir = data_dir / "global"
     parts.append(
-        f"- **Cross-project patterns**: Read `{global_dir}/MEMORY.md` for "
-        f"learnings that apply across all projects."
+        f"- **Cross-project patterns**: Read `{global_dir}/MEMORY.md` for learnings that apply across all projects."
     )
 
     return "\n".join(parts)

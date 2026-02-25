@@ -3,6 +3,7 @@
 
 All tests mock litellm.acompletion to avoid real LLM calls.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,11 +30,7 @@ def _make_config(data_dir: Path, claude_home: Path) -> ClawtexConfig:
 def _make_llm_response(content: dict) -> SimpleNamespace:
     """Create a mock LLM response object matching LiteLLM's structure."""
     return SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(content=json.dumps(content))
-            )
-        ],
+        choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(content)))],
         usage=SimpleNamespace(prompt_tokens=500, completion_tokens=300),
     )
 
@@ -169,7 +166,11 @@ class TestConsolidateProject:
 
         # Verify the LLM was called with INCREMENTAL mode prompt content
         call_args = mock_acompletion.call_args
-        messages = call_args.kwargs.get("messages") or call_args[1].get("messages") or call_args[0][0] if call_args[0] else None
+        messages = (
+            call_args.kwargs.get("messages") or call_args[1].get("messages") or call_args[0][0]
+            if call_args[0]
+            else None
+        )
         if messages is None:
             messages = call_args.kwargs["messages"]
         user_msg = messages[-1]["content"]

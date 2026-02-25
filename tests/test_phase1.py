@@ -151,9 +151,7 @@ def session_file(tmp_path: Path) -> Path:
 
 
 class TestExtractSession:
-    async def test_successful_extraction(
-        self, db, store, redactor, phase1_config, session_file, monkeypatch
-    ):
+    async def test_successful_extraction(self, db, store, redactor, phase1_config, session_file, monkeypatch):
         """Full pipeline: claim -> parse -> redact -> LLM -> validate -> store -> release."""
         from cerebral_clawtex import phase1
 
@@ -208,9 +206,7 @@ class TestExtractSession:
         assert len(summaries) == 1
         assert "fix-widget-tests" in summaries[0].stem
 
-    async def test_noop_response_skips(
-        self, db, store, redactor, phase1_config, session_file, monkeypatch
-    ):
+    async def test_noop_response_skips(self, db, store, redactor, phase1_config, session_file, monkeypatch):
         """When LLM returns empty fields, session should be marked as skipped."""
         from cerebral_clawtex import phase1
 
@@ -249,9 +245,7 @@ class TestExtractSession:
         summaries = store.list_rollout_summaries(project_path)
         assert len(summaries) == 0
 
-    async def test_invalid_json_retries_once(
-        self, db, store, redactor, phase1_config, session_file, monkeypatch
-    ):
+    async def test_invalid_json_retries_once(self, db, store, redactor, phase1_config, session_file, monkeypatch):
         """On invalid JSON from LLM, retries once with a nudge message."""
         from cerebral_clawtex import phase1
 
@@ -338,9 +332,7 @@ class TestExtractSession:
         assert session["status"] == "failed"
         assert session["error_message"] is not None
 
-    async def test_llm_call_failure(
-        self, db, store, redactor, phase1_config, session_file, monkeypatch
-    ):
+    async def test_llm_call_failure(self, db, store, redactor, phase1_config, session_file, monkeypatch):
         """When LLM call raises an exception, session is marked as failed."""
         from cerebral_clawtex import phase1
 
@@ -374,9 +366,7 @@ class TestExtractSession:
         assert session["status"] == "failed"
         assert "API timeout" in session["error_message"]
 
-    async def test_claim_failure_skips(
-        self, db, store, redactor, phase1_config, session_file, monkeypatch
-    ):
+    async def test_claim_failure_skips(self, db, store, redactor, phase1_config, session_file, monkeypatch):
         """If session cannot be claimed (already locked), it is skipped."""
         from cerebral_clawtex import phase1
 
@@ -412,9 +402,7 @@ class TestExtractSession:
         # LLM should never have been called
         mock_acompletion.assert_not_called()
 
-    async def test_post_scan_redaction(
-        self, db, store, redactor, phase1_config, session_file, monkeypatch
-    ):
+    async def test_post_scan_redaction(self, db, store, redactor, phase1_config, session_file, monkeypatch):
         """Post-extraction redaction catches any secrets that slipped through."""
         from cerebral_clawtex import phase1
 
@@ -527,9 +515,7 @@ class TestExtractSession:
 
 
 class TestRunPhase1:
-    async def test_discovers_and_extracts_sessions(
-        self, full_config, monkeypatch
-    ):
+    async def test_discovers_and_extracts_sessions(self, full_config, monkeypatch):
         """run_phase1() discovers sessions, registers them, and extracts."""
         from cerebral_clawtex import phase1
 
@@ -552,9 +538,7 @@ class TestRunPhase1:
         assert result["failed"] == 0
         mock_acompletion.assert_called_once()
 
-    async def test_concurrent_extraction_with_semaphore(
-        self, full_config, monkeypatch
-    ):
+    async def test_concurrent_extraction_with_semaphore(self, full_config, monkeypatch):
         """Multiple sessions are extracted concurrently (up to semaphore limit)."""
         from cerebral_clawtex import phase1
 
@@ -581,9 +565,7 @@ class TestRunPhase1:
         assert result["failed"] == 0
         assert mock_acompletion.call_count == 5
 
-    async def test_no_sessions_returns_zero_counts(
-        self, full_config, monkeypatch
-    ):
+    async def test_no_sessions_returns_zero_counts(self, full_config, monkeypatch):
         """When no sessions are discovered, returns all zeros."""
         from cerebral_clawtex import phase1
 
@@ -595,9 +577,7 @@ class TestRunPhase1:
         assert result == {"extracted": 0, "skipped": 0, "failed": 0}
         mock_acompletion.assert_not_called()
 
-    async def test_mixed_results(
-        self, full_config, monkeypatch
-    ):
+    async def test_mixed_results(self, full_config, monkeypatch):
         """Handles a mix of successful, skipped, and failed extractions."""
         from cerebral_clawtex import phase1
 
