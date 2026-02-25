@@ -98,9 +98,9 @@ T0 ──┬── T1 ──┐
   - All 15 tests pass in `tests/test_db.py`
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_db.py -v && uv run ruff check src/cerebral_clawtex/db.py tests/test_db.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["Implemented ClawtexDB class with SQLite WAL mode, foreign keys, 5 tables (schema_version, sessions, phase1_outputs, consolidation_runs, consolidation_lock), 4 indexes, session CRUD with upsert, optimistic row-level locking with stale lock expiry, phase1 output storage with watermark-based retrieval, consolidation scope-level locking, and consolidation run recording. TDD approach: wrote 17 tests first (red), then implemented db.py (green). Fixed 2 watermark tests that had same-second timestamp collisions by backdating earlier records. All 17 tests pass, ruff check clean."]
+- **files_edited**: ["src/cerebral_clawtex/db.py", "tests/test_db.py"]
 
 ---
 
