@@ -37,8 +37,8 @@ def _resolve_project_path(project_dir: str, config: ClawtexConfig) -> str:
     if not project_dir:
         return ""
 
-    # Normalize path separators to / before encoding (handles Windows backslashes)
-    normalized = project_dir.replace(os.sep, "/")
+    # Normalize path separators to / before encoding (handles Windows backslashes on any OS)
+    normalized = project_dir.replace("\\", "/")
     # Claude Code encodes project paths by replacing / with -
     # e.g. /home/user/myproject -> -home-user-myproject
     return normalized.replace("/", "-")
@@ -118,7 +118,8 @@ def session_start_hook() -> None:
         context_parts.append(f"### Global Memory\n\n{global_summary}")
 
     if not context_parts:
-        # No memories yet -- just trigger background extraction
+        # No memories yet -- emit valid empty context and trigger background extraction.
+        print(json.dumps({"additional_context": ""}))
         _spawn_background_extraction(config)
         return
 

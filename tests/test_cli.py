@@ -393,6 +393,40 @@ class TestInstallCommand:
         assert settings["some_setting"] is True
         assert len(settings["hooks"]["SessionStart"]) == 1
 
+    def test_install_malformed_settings_fails_cleanly(self, mock_config: ClawtexConfig):
+        settings_path = mock_config.general.claude_home / "settings.json"
+        settings_path.write_text("{not valid json")
+
+        with patch("cerebral_clawtex.cli.load_config", return_value=mock_config):
+            result = runner.invoke(app, ["install"])
+
+        assert result.exit_code == 1
+        assert "invalid claude settings" in result.output.lower()
+
+    def test_install_does_not_treat_other_clawtex_command_as_installed(self, mock_config: ClawtexConfig):
+        settings_path = mock_config.general.claude_home / "settings.json"
+        existing = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "matcher": "startup",
+                        "hooks": [{"type": "command", "command": "clawtex custom-report", "timeout": 10}],
+                    }
+                ]
+            }
+        }
+        settings_path.write_text(json.dumps(existing))
+
+        with patch("cerebral_clawtex.cli.load_config", return_value=mock_config):
+            result = runner.invoke(app, ["install"])
+
+        assert result.exit_code == 0
+        settings = json.loads(settings_path.read_text())
+        hooks = settings["hooks"]["SessionStart"]
+        assert len(hooks) == 2
+        assert hooks[0]["hooks"][0]["command"] == "clawtex custom-report"
+        assert hooks[1]["hooks"][0]["command"] == "clawtex hook session-start"
+
 
 class TestUninstallCommand:
     def test_uninstall_removes_clawtex_hook(self, mock_config: ClawtexConfig):
@@ -450,6 +484,43 @@ class TestUninstallCommand:
 
         assert result.exit_code == 0
         assert "uninstalled" in result.output.lower()
+
+    def test_uninstall_malformed_settings_fails_cleanly(self, mock_config: ClawtexConfig):
+        settings_path = mock_config.general.claude_home / "settings.json"
+        settings_path.write_text("{bad")
+
+        with patch("cerebral_clawtex.cli.load_config", return_value=mock_config):
+            result = runner.invoke(app, ["uninstall"])
+
+        assert result.exit_code == 1
+        assert "invalid claude settings" in result.output.lower()
+
+    def test_uninstall_preserves_non_matching_clawtex_command(self, mock_config: ClawtexConfig):
+        settings_path = mock_config.general.claude_home / "settings.json"
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "matcher": "startup",
+                        "hooks": [{"type": "command", "command": "clawtex custom-report", "timeout": 10}],
+                    },
+                    {
+                        "matcher": "startup",
+                        "hooks": [{"type": "command", "command": "clawtex hook session-start", "timeout": 10}],
+                    },
+                ]
+            }
+        }
+        settings_path.write_text(json.dumps(settings))
+
+        with patch("cerebral_clawtex.cli.load_config", return_value=mock_config):
+            result = runner.invoke(app, ["uninstall"])
+
+        assert result.exit_code == 0
+        updated = json.loads(settings_path.read_text())
+        hooks = updated["hooks"]["SessionStart"]
+        assert len(hooks) == 1
+        assert hooks[0]["hooks"][0]["command"] == "clawtex custom-report"
 
     def test_uninstall_purge_removes_data(self, mock_config: ClawtexConfig):
         """uninstall --purge removes the data directory."""

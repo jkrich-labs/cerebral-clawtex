@@ -26,6 +26,7 @@ from cerebral_clawtex.storage import MemoryStore
 logger = logging.getLogger(__name__)
 
 REQUIRED_FIELDS = {"task_outcome", "rollout_slug", "rollout_summary", "raw_memory"}
+VALID_TASK_OUTCOMES = {"success", "partial", "fail", "uncertain"}
 
 RETRY_NUDGE = "Your response was not valid JSON. Please respond with only valid JSON matching the schema."
 
@@ -61,9 +62,20 @@ def _build_prompts(
     return system_prompt, user_prompt
 
 
-def _validate_response(data: dict) -> bool:
+def _validate_response(data: object) -> bool:
     """Validate that the LLM response has all required fields."""
-    return REQUIRED_FIELDS.issubset(data.keys())
+    if not isinstance(data, dict):
+        return False
+    if not REQUIRED_FIELDS.issubset(data.keys()):
+        return False
+    if not isinstance(data.get("task_outcome"), str):
+        return False
+    if data["task_outcome"] not in VALID_TASK_OUTCOMES:
+        return False
+    for field in ("rollout_slug", "rollout_summary", "raw_memory"):
+        if not isinstance(data.get(field), str):
+            return False
+    return True
 
 
 def _is_noop(data: dict) -> bool:
@@ -98,13 +110,17 @@ async def extract_session(
 
     Returns: "extracted" | "skipped" | "failed"
     """
-    # Step 1: Claim session
-    claimed = db.claim_session(session_id, worker_id)
-    if not claimed:
-        logger.info("Session %s could not be claimed, skipping", session_id)
-        return "skipped"
-
     try:
+        # Step 1: Claim session
+        claimed = db.claim_session(
+            session_id,
+            worker_id,
+            stale_threshold=config.session_lock_stale_seconds,
+        )
+        if not claimed:
+            logger.info("Session %s could not be claimed, skipping", session_id)
+            return "skipped"
+
         # Step 2: Parse JSONL
         messages = parse_session(session_file)
         if not messages:
@@ -257,10 +273,19 @@ async def run_phase1(
             include_projects=config.projects.include or None,
             exclude_projects=config.projects.exclude or None,
         )
+        if project_path:
+            sessions = [sess for sess in sessions if sess["project_path"] == project_path]
 
         if not sessions:
             if not retry_failed:
                 return {"extracted": 0, "skipped": 0, "failed": 0}
+
+        # Deterministic priority: newest files first.
+        sessions = sorted(
+            sessions,
+            key=lambda sess: (sess["file_modified_at"], sess["session_id"]),
+            reverse=True,
+        )
 
         # Limit sessions per run
         sessions = sessions[: config.phase1.max_sessions_per_run]
@@ -286,7 +311,7 @@ async def run_phase1(
             params.append(config.phase1.max_sessions_per_run)
             failed_rows = db.execute(
                 f"SELECT session_id, project_path, session_file, file_modified_at, file_size_bytes "
-                f"FROM sessions WHERE {where} LIMIT ?",
+                f"FROM sessions WHERE {where} ORDER BY file_modified_at DESC LIMIT ?",
                 tuple(params),
             ).fetchall()
             for row in failed_rows:
@@ -295,18 +320,23 @@ async def run_phase1(
                     "locked_by = NULL, locked_at = NULL WHERE session_id = ?",
                     (row["session_id"],),
                 )
-                # Add to sessions list if not already discovered
-                if not any(s["session_id"] == row["session_id"] for s in sessions):
-                    sessions.append(
-                        {
-                            "session_id": row["session_id"],
-                            "project_path": row["project_path"],
-                            "session_file": row["session_file"],
-                            "file_modified_at": row["file_modified_at"],
-                            "file_size_bytes": row["file_size_bytes"],
-                        }
-                    )
             db.conn.commit()
+
+        # Build extraction queue from pending rows only.
+        pending_rows = db.get_pending_sessions(
+            project_path=project_path,
+            limit=config.phase1.max_sessions_per_run,
+        )
+        if not pending_rows:
+            return {"extracted": 0, "skipped": 0, "failed": 0}
+        queue = [
+            {
+                "session_id": row["session_id"],
+                "project_path": row["project_path"],
+                "session_file": row["session_file"],
+            }
+            for row in pending_rows
+        ]
 
         # Extract with concurrency control
         semaphore = asyncio.Semaphore(config.phase1.concurrent_extractions)
@@ -325,7 +355,7 @@ async def run_phase1(
                     worker_id=worker_id,
                 )
 
-        tasks = [_extract_with_semaphore(sess) for sess in sessions]
+        tasks = [_extract_with_semaphore(sess) for sess in queue]
         results = await asyncio.gather(*tasks)
 
         return {

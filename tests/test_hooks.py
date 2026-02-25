@@ -47,8 +47,8 @@ class TestSessionStartHook:
         assert "Project Memory" in output["additional_context"]
         assert "Global Memory" in output["additional_context"]
 
-    def test_no_memory_files_no_output(self, tmp_data_dir: Path, capsys, monkeypatch):
-        """When no memory files exist, no JSON output (just background extraction spawned)."""
+    def test_no_memory_files_outputs_empty_context_json(self, tmp_data_dir: Path, capsys, monkeypatch):
+        """When no memory files exist, output valid JSON with empty additional_context."""
         config = ClawtexConfig(general=GeneralConfig(data_dir=tmp_data_dir))
 
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/home/user/myproject")
@@ -63,8 +63,8 @@ class TestSessionStartHook:
             session_start_hook()
 
         captured = capsys.readouterr()
-        # No JSON output when no memory files exist
-        assert captured.out.strip() == ""
+        output = json.loads(captured.out.strip())
+        assert output["additional_context"] == ""
         # But background extraction is still spawned
         mock_spawn.assert_called_once()
 
@@ -218,6 +218,13 @@ class TestResolveProjectPath:
         config = ClawtexConfig(general=GeneralConfig(data_dir=tmp_data_dir))
         result = _resolve_project_path("", config)
         assert result == ""
+
+    def test_normalizes_windows_backslashes(self, tmp_data_dir: Path):
+        from cerebral_clawtex.hooks import _resolve_project_path
+
+        config = ClawtexConfig(general=GeneralConfig(data_dir=tmp_data_dir))
+        result = _resolve_project_path(r"C:\Users\me\repo", config)
+        assert result == "C:-Users-me-repo"
 
 
 class TestBuildNavigationInstructions:

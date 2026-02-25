@@ -355,6 +355,7 @@ def config_cmd(
     console.print(f"[cyan]phase1.min_session_idle_hours[/cyan] = {config.phase1.min_session_idle_hours}")
     console.print(f"[cyan]phase1.max_input_tokens[/cyan] = {config.phase1.max_input_tokens}")
     console.print(f"[cyan]phase1.concurrent_extractions[/cyan] = {config.phase1.concurrent_extractions}")
+    console.print(f"[cyan]phase1.session_lock_stale_seconds[/cyan] = {config.phase1.session_lock_stale_seconds}")
     console.print(f"[cyan]phase2.model[/cyan] = {config.phase2.model}")
     console.print(
         f"[cyan]phase2.max_memories_for_consolidation[/cyan] = {config.phase2.max_memories_for_consolidation}"
@@ -380,15 +381,44 @@ CLAWTEX_HOOK_ENTRY = {
 
 def _is_clawtex_hook(entry: dict) -> bool:
     """Check if a hook entry is the clawtex hook."""
+    if not isinstance(entry, dict):
+        return False
     hooks = entry.get("hooks", [])
-    return any(isinstance(h, dict) and "clawtex" in h.get("command", "") for h in hooks)
+    if not isinstance(hooks, list):
+        return False
+    return any(
+        isinstance(h, dict)
+        and h.get("type") == "command"
+        and h.get("command") == "clawtex hook session-start"
+        for h in hooks
+    )
 
 
 def _read_settings(settings_path: Path) -> dict:
     """Read Claude Code settings.json, returning empty dict if missing."""
-    if settings_path.exists():
-        return json.loads(settings_path.read_text(encoding="utf-8"))
-    return {}
+    if not settings_path.exists():
+        return {}
+
+    try:
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid Claude settings JSON at {settings_path}: {exc.msg}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid Claude settings JSON at {settings_path}: root must be an object")
+
+    hooks = data.get("hooks")
+    if hooks is not None and not isinstance(hooks, dict):
+        raise ValueError(f"Invalid Claude settings JSON at {settings_path}: hooks must be an object")
+
+    if isinstance(hooks, dict) and "SessionStart" in hooks:
+        session_start = hooks["SessionStart"]
+        if not isinstance(session_start, list) or any(not isinstance(entry, dict) for entry in session_start):
+            raise ValueError(
+                f"Invalid Claude settings JSON at {settings_path}: hooks.SessionStart must be a list of objects"
+            )
+
+    return data
 
 
 def _write_settings(settings_path: Path, settings: dict) -> None:
@@ -415,7 +445,11 @@ def install() -> None:
 
     # Read settings.json (or create if missing)
     settings_path = config.general.claude_home / "settings.json"
-    settings = _read_settings(settings_path)
+    try:
+        settings = _read_settings(settings_path)
+    except ValueError as exc:
+        console.print(f"[red]Invalid Claude settings:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
 
     # Ensure hooks structure exists
     if "hooks" not in settings:
@@ -447,7 +481,11 @@ def uninstall(
 
     # Read settings.json
     settings_path = config.general.claude_home / "settings.json"
-    settings = _read_settings(settings_path)
+    try:
+        settings = _read_settings(settings_path)
+    except ValueError as exc:
+        console.print(f"[red]Invalid Claude settings:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
 
     # Remove only the clawtex hook entry, preserve others
     if "hooks" in settings and "SessionStart" in settings["hooks"]:

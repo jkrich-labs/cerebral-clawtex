@@ -49,10 +49,12 @@ class MemoryStore:
         return self.data_dir / "global"
 
     def project_dir(self, project_path: str) -> Path:
-        result = (self.data_dir / "projects" / project_path).resolve()
-        # Guard against path traversal via crafted project_path values
         projects_root = (self.data_dir / "projects").resolve()
-        if not str(result).startswith(str(projects_root)):
+        result = (projects_root / project_path).resolve()
+        # Guard against path traversal via crafted project_path values.
+        try:
+            result.relative_to(projects_root)
+        except ValueError:
             raise ValueError(f"Invalid project path would escape data directory: {project_path}")
         return result
 
@@ -95,9 +97,9 @@ class MemoryStore:
 
     # --- Skills ---
 
-    def write_skill(self, project_path: str, skill_name: str, content: str) -> Path:
+    def write_skill(self, project_path: str | None, skill_name: str, content: str) -> Path:
         safe_name = _sanitize_slug(skill_name)
-        path = self.project_dir(project_path) / "skills" / safe_name / "SKILL.md"
+        path = self._scope_dir(project_path) / "skills" / safe_name / "SKILL.md"
         _atomic_write(path, content)
         return path
 
@@ -109,8 +111,8 @@ class MemoryStore:
             return []
         return sorted(d.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
 
-    def list_skills(self, project_path: str) -> list[Path]:
-        d = self.project_dir(project_path) / "skills"
+    def list_skills(self, project_path: str | None) -> list[Path]:
+        d = self._scope_dir(project_path) / "skills"
         if not d.exists():
             return []
         return sorted(p / "SKILL.md" for p in d.iterdir() if (p / "SKILL.md").exists())

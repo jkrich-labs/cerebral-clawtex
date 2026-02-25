@@ -85,6 +85,12 @@ class ClawtexDB:
         if row is None:
             self.conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
             self.conn.commit()
+            return
+        if row["version"] != SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Unsupported database schema version {row['version']}; expected {SCHEMA_VERSION}. "
+                "Migrations are required."
+            )
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         return self.conn.execute(sql, params)
@@ -108,8 +114,42 @@ class ClawtexDB:
                file_modified_at, file_size_bytes, status, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
+               project_path=excluded.project_path,
+               session_file=excluded.session_file,
                file_modified_at=excluded.file_modified_at,
                file_size_bytes=excluded.file_size_bytes,
+               status=CASE
+                   WHEN sessions.project_path != excluded.project_path
+                     OR sessions.session_file != excluded.session_file
+                     OR sessions.file_modified_at != excluded.file_modified_at
+                     OR sessions.file_size_bytes != excluded.file_size_bytes
+                   THEN 'pending'
+                   ELSE sessions.status
+               END,
+               locked_by=CASE
+                   WHEN sessions.project_path != excluded.project_path
+                     OR sessions.session_file != excluded.session_file
+                     OR sessions.file_modified_at != excluded.file_modified_at
+                     OR sessions.file_size_bytes != excluded.file_size_bytes
+                   THEN NULL
+                   ELSE sessions.locked_by
+               END,
+               locked_at=CASE
+                   WHEN sessions.project_path != excluded.project_path
+                     OR sessions.session_file != excluded.session_file
+                     OR sessions.file_modified_at != excluded.file_modified_at
+                     OR sessions.file_size_bytes != excluded.file_size_bytes
+                   THEN NULL
+                   ELSE sessions.locked_at
+               END,
+               error_message=CASE
+                   WHEN sessions.project_path != excluded.project_path
+                     OR sessions.session_file != excluded.session_file
+                     OR sessions.file_modified_at != excluded.file_modified_at
+                     OR sessions.file_size_bytes != excluded.file_size_bytes
+                   THEN NULL
+                   ELSE sessions.error_message
+               END,
                updated_at=excluded.updated_at""",
             (session_id, project_path, session_file, file_modified_at, file_size_bytes, now, now),
         )
@@ -215,6 +255,30 @@ class ClawtexDB:
             tuple(params),
         ).fetchall()
 
+    def get_phase1_outputs_for_consolidation(
+        self,
+        project_path: str | None = None,
+        since_cursor: int | None = None,
+        limit: int = 200,
+    ) -> list[sqlite3.Row]:
+        """Load Phase 1 outputs using a stable rowid cursor for incremental processing."""
+        conditions = []
+        params: list = []
+        if project_path:
+            conditions.append("project_path = ?")
+            params.append(project_path)
+        if since_cursor is not None:
+            conditions.append("rowid > ?")
+            params.append(since_cursor)
+        where = " AND ".join(conditions)
+        if where:
+            where = "WHERE " + where
+        params.append(limit)
+        return self.conn.execute(
+            f"SELECT rowid AS output_rowid, * FROM phase1_outputs {where} ORDER BY rowid ASC LIMIT ?",
+            tuple(params),
+        ).fetchall()
+
     # --- Consolidation Lock ---
 
     def acquire_consolidation_lock(self, scope: str, worker_id: str, stale_threshold: int = 600) -> bool:
@@ -278,7 +342,7 @@ class ClawtexDB:
     def get_last_watermark(self, scope: str) -> int | None:
         row = self.conn.execute(
             "SELECT input_watermark FROM consolidation_runs "
-            "WHERE scope = ? AND status = 'completed' ORDER BY started_at DESC LIMIT 1",
+            "WHERE scope = ? AND status = 'completed' ORDER BY started_at DESC, id DESC LIMIT 1",
             (scope,),
         ).fetchone()
         return row[0] if row else None

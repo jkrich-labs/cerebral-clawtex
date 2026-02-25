@@ -289,6 +289,43 @@ class TestExtractSession:
         messages = retry_call.kwargs["messages"]
         assert any("not valid JSON" in m["content"] for m in messages if m["role"] == "user")
 
+    async def test_non_object_json_retries_once(self, db, store, redactor, phase1_config, session_file, monkeypatch):
+        """Valid JSON of the wrong shape is treated as invalid and retried."""
+        from cerebral_clawtex import phase1
+
+        session_id = "test-session-id"
+        project_path = "-home-user-myproject"
+
+        db.register_session(
+            session_id=session_id,
+            project_path=project_path,
+            session_file=str(session_file),
+            file_modified_at=int(time.time()) - 3600,
+            file_size_bytes=session_file.stat().st_size,
+        )
+
+        mock_acompletion = AsyncMock(
+            side_effect=[
+                _make_llm_response("[]"),
+                _make_llm_response(VALID_LLM_RESPONSE),
+            ]
+        )
+        monkeypatch.setattr("cerebral_clawtex.phase1.acompletion", mock_acompletion)
+
+        status = await phase1.extract_session(
+            session_id=session_id,
+            session_file=session_file,
+            project_path=project_path,
+            db=db,
+            store=store,
+            redactor=redactor,
+            config=phase1_config,
+            worker_id="test-worker",
+        )
+
+        assert status == "extracted"
+        assert mock_acompletion.call_count == 2
+
     async def test_invalid_json_both_attempts_fails(
         self, db, store, redactor, phase1_config, session_file, monkeypatch
     ):
@@ -402,6 +439,45 @@ class TestExtractSession:
         # LLM should never have been called
         mock_acompletion.assert_not_called()
 
+    async def test_claim_error_returns_failed(self, db, store, redactor, phase1_config, session_file, monkeypatch):
+        """If claiming raises, extraction should fail gracefully instead of crashing."""
+        from cerebral_clawtex import phase1
+
+        session_id = "test-session-id"
+        project_path = "-home-user-myproject"
+
+        db.register_session(
+            session_id=session_id,
+            project_path=project_path,
+            session_file=str(session_file),
+            file_modified_at=int(time.time()) - 3600,
+            file_size_bytes=session_file.stat().st_size,
+        )
+
+        def _raise_claim(*_args, **_kwargs):
+            raise RuntimeError("claim failed")
+
+        monkeypatch.setattr(db, "claim_session", _raise_claim)
+        mock_acompletion = AsyncMock()
+        monkeypatch.setattr("cerebral_clawtex.phase1.acompletion", mock_acompletion)
+
+        status = await phase1.extract_session(
+            session_id=session_id,
+            session_file=session_file,
+            project_path=project_path,
+            db=db,
+            store=store,
+            redactor=redactor,
+            config=phase1_config,
+            worker_id="test-worker",
+        )
+
+        assert status == "failed"
+        session = db.get_session(session_id)
+        assert session["status"] == "failed"
+        assert "claim failed" in session["error_message"]
+        mock_acompletion.assert_not_called()
+
     async def test_post_scan_redaction(self, db, store, redactor, phase1_config, session_file, monkeypatch):
         """Post-extraction redaction catches any secrets that slipped through."""
         from cerebral_clawtex import phase1
@@ -489,6 +565,52 @@ class TestExtractSession:
         mock_acompletion = AsyncMock(
             side_effect=[
                 _make_llm_response(incomplete_response),
+                _make_llm_response(VALID_LLM_RESPONSE),
+            ]
+        )
+        monkeypatch.setattr("cerebral_clawtex.phase1.acompletion", mock_acompletion)
+
+        status = await phase1.extract_session(
+            session_id=session_id,
+            session_file=session_file,
+            project_path=project_path,
+            db=db,
+            store=store,
+            redactor=redactor,
+            config=phase1_config,
+            worker_id="test-worker",
+        )
+
+        assert status == "extracted"
+        assert mock_acompletion.call_count == 2
+
+    async def test_invalid_task_outcome_treated_as_invalid(
+        self, db, store, redactor, phase1_config, session_file, monkeypatch
+    ):
+        """Responses with unsupported task_outcome values should retry."""
+        from cerebral_clawtex import phase1
+
+        session_id = "test-session-id"
+        project_path = "-home-user-myproject"
+        db.register_session(
+            session_id=session_id,
+            project_path=project_path,
+            session_file=str(session_file),
+            file_modified_at=int(time.time()) - 3600,
+            file_size_bytes=session_file.stat().st_size,
+        )
+
+        invalid_outcome = json.dumps(
+            {
+                "task_outcome": "done",
+                "rollout_slug": "x",
+                "rollout_summary": "y",
+                "raw_memory": "z",
+            }
+        )
+        mock_acompletion = AsyncMock(
+            side_effect=[
+                _make_llm_response(invalid_outcome),
                 _make_llm_response(VALID_LLM_RESPONSE),
             ]
         )
@@ -609,3 +731,27 @@ class TestRunPhase1:
         assert result["extracted"] >= 0
         assert result["skipped"] >= 0
         assert result["failed"] >= 0
+
+    async def test_project_filter_extracts_only_target_project(self, full_config, monkeypatch):
+        """run_phase1(project_path=...) only extracts sessions from that project."""
+        from cerebral_clawtex import phase1
+
+        project_a = full_config.general.claude_home / "projects" / "-home-user-proj-a"
+        project_b = full_config.general.claude_home / "projects" / "-home-user-proj-b"
+        project_a.mkdir(parents=True)
+        project_b.mkdir(parents=True)
+
+        sess_a = project_a / "sess-a.jsonl"
+        sess_b = project_b / "sess-b.jsonl"
+        _write_session_jsonl(sess_a)
+        _write_session_jsonl(sess_b)
+        old_time = time.time() - 7200
+        os.utime(sess_a, (old_time, old_time))
+        os.utime(sess_b, (old_time, old_time))
+
+        mock_acompletion = AsyncMock(return_value=_make_llm_response(VALID_LLM_RESPONSE))
+        monkeypatch.setattr("cerebral_clawtex.phase1.acompletion", mock_acompletion)
+
+        result = await phase1.run_phase1(config=full_config, project_path="-home-user-proj-a")
+        assert result["extracted"] == 1
+        assert mock_acompletion.call_count == 1

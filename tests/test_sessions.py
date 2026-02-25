@@ -103,7 +103,7 @@ class TestDiscoverSessions:
         (proj / "abc.jsonl").write_text("{}\n")
         sessions = discover_sessions(tmp_claude_home, min_idle_hours=0)
         assert sessions[0]["project_path"] == "-home-user-myproject"
-        assert sessions[0]["session_id"] == "abc"
+        assert sessions[0]["session_id"] == "-home-user-myproject:abc"
 
     def test_skips_subagent_sessions(self, tmp_claude_home: Path):
         proj = tmp_claude_home / "projects" / "-proj"
@@ -114,7 +114,38 @@ class TestDiscoverSessions:
         (subagent_dir / "agent-1.jsonl").write_text("{}\n")
         sessions = discover_sessions(tmp_claude_home, min_idle_hours=0)
         assert len(sessions) == 1
-        assert sessions[0]["session_id"] == "main"
+        assert sessions[0]["session_id"] == "-proj:main"
+
+    def test_session_id_is_project_scoped(self, tmp_claude_home: Path):
+        for project in ["-proj-a", "-proj-b"]:
+            proj_dir = tmp_claude_home / "projects" / project
+            proj_dir.mkdir(parents=True)
+            (proj_dir / "same-id.jsonl").write_text("{}\n")
+        sessions = discover_sessions(tmp_claude_home, min_idle_hours=0)
+        session_ids = {s["session_id"] for s in sessions}
+        assert len(session_ids) == 2
+        assert "-proj-a:same-id" in session_ids
+        assert "-proj-b:same-id" in session_ids
+
+    def test_stat_race_is_skipped(self, tmp_claude_home: Path, monkeypatch):
+        proj = tmp_claude_home / "projects" / "-proj"
+        proj.mkdir(parents=True)
+        good = proj / "good.jsonl"
+        bad = proj / "bad.jsonl"
+        good.write_text("{}\n")
+        bad.write_text("{}\n")
+
+        orig_stat = Path.stat
+
+        def flaky_stat(path: Path, *args, **kwargs):
+            if path.name == "bad.jsonl":
+                raise FileNotFoundError("simulated race")
+            return orig_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", flaky_stat)
+        sessions = discover_sessions(tmp_claude_home, min_idle_hours=0)
+        assert len(sessions) == 1
+        assert sessions[0]["session_id"] == "-proj:good"
 
     def test_filters_by_age(self, tmp_claude_home: Path):
         proj = tmp_claude_home / "projects" / "-proj"
@@ -130,7 +161,7 @@ class TestDiscoverSessions:
         os.utime(old, (old_time, old_time))
         sessions = discover_sessions(tmp_claude_home, max_age_days=30, min_idle_hours=0)
         assert len(sessions) == 1
-        assert sessions[0]["session_id"] == "recent"
+        assert sessions[0]["session_id"] == "-proj:recent"
 
     def test_filters_by_idle_hours(self, tmp_claude_home: Path):
         proj = tmp_claude_home / "projects" / "-proj"
@@ -225,6 +256,26 @@ class TestParseSession:
         f.write_text('{"type":"user","message":{"role":"user","content":"ok"}}\nnot-json\n')
         messages = parse_session(f)
         assert len(messages) == 1  # corrupt line skipped
+
+    def test_handles_unexpected_content_shapes(self, tmp_path: Path):
+        f = tmp_path / "session.jsonl"
+        records = [
+            {
+                "type": "assistant",
+                "message": {"role": "assistant", "content": {"not": "a-list"}},
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": ["bad-block", {"type": "text", "text": "safe text"}],
+                },
+            },
+        ]
+        _write_session(f, records)
+        messages = parse_session(f)
+        assert len(messages) == 1
+        assert "safe text" in messages[0]["content"]
 
 
 class TestTruncateContent:

@@ -37,8 +37,11 @@ def discover_sessions(
             if any(exc in project_path for exc in exclude_projects):
                 continue
 
-        for jsonl_file in project_dir.glob("*.jsonl"):
-            stat = jsonl_file.stat()
+        for jsonl_file in sorted(project_dir.glob("*.jsonl")):
+            try:
+                stat = jsonl_file.stat()
+            except OSError:
+                continue
             age = now - stat.st_mtime
 
             if age > max_age_seconds:
@@ -48,7 +51,7 @@ def discover_sessions(
 
             results.append(
                 {
-                    "session_id": jsonl_file.stem,
+                    "session_id": f"{project_path}:{jsonl_file.stem}",
                     "project_path": project_path,
                     "session_file": str(jsonl_file),
                     "file_modified_at": int(stat.st_mtime),
@@ -59,14 +62,20 @@ def discover_sessions(
     return results
 
 
-def _extract_content_from_message(message: dict) -> str:
+def _extract_content_from_message(message: object) -> str:
     """Extract readable text from a message's content field."""
+    if not isinstance(message, dict):
+        return ""
     content = message.get("content", "")
     if isinstance(content, str):
         return content
+    if not isinstance(content, list):
+        return ""
 
     parts = []
     for block in content:
+        if not isinstance(block, dict):
+            continue
         block_type = block.get("type", "")
         if block_type == "text":
             parts.append(block.get("text", ""))
@@ -77,7 +86,11 @@ def _extract_content_from_message(message: dict) -> str:
         elif block_type == "tool_result":
             result_content = block.get("content", "")
             if isinstance(result_content, list):
-                result_content = " ".join(b.get("text", "") for b in result_content if b.get("type") == "text")
+                result_content = " ".join(
+                    b.get("text", "")
+                    for b in result_content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
             parts.append(f"[Tool Result] {result_content}")
         elif block_type == "thinking":
             parts.append(f"[Thinking] {block.get('thinking', '')}")
@@ -105,6 +118,8 @@ def parse_session(session_file: Path) -> list[dict]:
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
             continue
 
         record_type = record.get("type", "")

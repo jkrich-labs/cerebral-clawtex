@@ -1,6 +1,8 @@
 # tests/test_config.py
 from pathlib import Path
 
+import pytest
+
 from cerebral_clawtex.config import ClawtexConfig, derive_project_name, load_config
 
 
@@ -74,3 +76,21 @@ class TestLoadFromToml:
         config_file.write_text('[redaction]\nextra_patterns = ["CORP_SECRET_[A-Z]+"]\n')
         cfg = load_config(config_path=config_file)
         assert len(cfg.redaction.extra_patterns) == 1
+
+    def test_unknown_key_raises(self, tmp_config_dir: Path):
+        config_file = tmp_config_dir / "config.toml"
+        config_file.write_text('[phase1]\nnonexistent = 1\n')
+        with pytest.raises(ValueError, match="Unknown config key"):
+            load_config(config_path=config_file)
+
+    def test_invalid_type_raises(self, tmp_config_dir: Path):
+        config_file = tmp_config_dir / "config.toml"
+        config_file.write_text('[phase1]\nconcurrent_extractions = "many"\n')
+        with pytest.raises(TypeError, match="Invalid type"):
+            load_config(config_path=config_file)
+
+    def test_invalid_range_raises(self, tmp_config_dir: Path):
+        config_file = tmp_config_dir / "config.toml"
+        config_file.write_text("[phase1]\nmax_sessions_per_run = 0\n")
+        with pytest.raises(ValueError, match="must be > 0"):
+            load_config(config_path=config_file)

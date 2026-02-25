@@ -348,7 +348,7 @@ class TestEndToEnd:
         # ---------------------------------------------------------------
         db = ClawtexDB(data_dir / "clawtex.db")
         try:
-            session = db.get_session("e2e-session-001")
+            session = db.get_session(f"{project_name}:e2e-session-001")
             assert session is not None, "Session not found in DB"
             assert session["status"] == "extracted"
 
@@ -629,8 +629,8 @@ class TestEndToEnd:
         assert result["skipped"] == 1
         assert result["failed"] == 0
 
-    async def test_hook_with_no_memories_produces_no_output(self, e2e_env):
-        """When there are no memory files, the hook produces no JSON output."""
+    async def test_hook_with_no_memories_produces_empty_context_json(self, e2e_env):
+        """When there are no memory files, hook still emits valid JSON with empty context."""
         config = e2e_env["config"]
 
         with (
@@ -656,7 +656,8 @@ class TestEndToEnd:
 
             output = captured.getvalue().strip()
 
-        assert output == "", "Hook should produce no output when no memories exist"
+        payload = json.loads(output)
+        assert payload["additional_context"] == ""
 
     async def test_multiple_sessions_concurrent_extraction(self, e2e_env):
         """Multiple sessions are discovered and extracted concurrently."""
@@ -691,7 +692,7 @@ class TestEndToEnd:
         db = ClawtexDB(data_dir / "clawtex.db")
         try:
             for i in range(3):
-                session = db.get_session(f"session-{i}")
+                session = db.get_session(f"{project_name}:session-{i}")
                 assert session is not None
                 assert session["status"] == "extracted"
         finally:

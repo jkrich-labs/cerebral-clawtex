@@ -84,8 +84,10 @@ class Redactor:
                 # Pattern has capture group -- redact only the captured portion
                 def _sub(m: re.Match[str], cat: str = category) -> str:
                     full = m.group(0)
-                    captured = m.group(1)
-                    return full.replace(captured, self._replacement(cat), 1)
+                    start, end = m.span(1)
+                    rel_start = start - m.start(0)
+                    rel_end = end - m.start(0)
+                    return full[:rel_start] + self._replacement(cat) + full[rel_end:]
 
                 result = pattern.sub(_sub, result)
             else:

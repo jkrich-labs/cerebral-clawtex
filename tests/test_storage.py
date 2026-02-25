@@ -28,6 +28,11 @@ class TestProjectPathTraversal:
         with pytest.raises(ValueError, match="escape data directory"):
             store.project_dir("../../etc")
 
+    def test_prefix_collision_escape_raises_value_error(self, tmp_data_dir: Path):
+        store = MemoryStore(tmp_data_dir)
+        with pytest.raises(ValueError, match="escape data directory"):
+            store.project_dir("../projects_evil")
+
 
 class TestProjectPaths:
     def test_project_dir(self, tmp_data_dir: Path):

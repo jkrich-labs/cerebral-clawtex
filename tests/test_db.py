@@ -1,4 +1,5 @@
 import time
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,19 @@ class TestSchemaCreation:
         assert row[0] == 1
         db.close()
 
+    def test_schema_version_mismatch_raises(self, tmp_data_dir: Path):
+        db_path = tmp_data_dir / "test.db"
+        db = ClawtexDB(db_path)
+        db.close()
+
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE schema_version SET version = 0")
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(RuntimeError, match="Unsupported database schema version"):
+            ClawtexDB(db_path)
+
 
 class TestSessionTracking:
     def test_register_session(self, tmp_data_dir: Path):
@@ -70,6 +84,34 @@ class TestSessionTracking:
         row = db.get_session("abc-123")
         assert row["file_modified_at"] == 2000
         assert row["file_size_bytes"] == 6000
+        db.close()
+
+    def test_register_duplicate_updates_location_fields(self, tmp_data_dir: Path):
+        db = ClawtexDB(tmp_data_dir / "test.db")
+        db.register_session("abc-123", "-proj-a", "/path-a.jsonl", 1000, 5000)
+        db.register_session("abc-123", "-proj-b", "/path-b.jsonl", 1000, 5000)
+        row = db.get_session("abc-123")
+        assert row["project_path"] == "-proj-b"
+        assert row["session_file"] == "/path-b.jsonl"
+        db.close()
+
+    def test_register_changed_file_requeues_extracted_session(self, tmp_data_dir: Path):
+        db = ClawtexDB(tmp_data_dir / "test.db")
+        db.register_session("abc-123", "-proj", "/path.jsonl", 1000, 5000)
+        db.release_session("abc-123", status="extracted", error_message="old error")
+        db.execute(
+            "UPDATE sessions SET locked_by = ?, locked_at = ? WHERE session_id = ?",
+            ("worker-1", int(time.time()), "abc-123"),
+        )
+        db.conn.commit()
+
+        # New fingerprint should re-queue for extraction.
+        db.register_session("abc-123", "-proj", "/path.jsonl", 2000, 7000)
+        row = db.get_session("abc-123")
+        assert row["status"] == "pending"
+        assert row["locked_by"] is None
+        assert row["locked_at"] is None
+        assert row["error_message"] is None
         db.close()
 
     def test_get_pending_sessions(self, tmp_data_dir: Path):
@@ -217,6 +259,16 @@ class TestConsolidationRuns:
         db.execute("UPDATE consolidation_runs SET started_at = 100 WHERE input_watermark = 1000")
         db.conn.commit()
         db.record_consolidation_run("-proj", "completed", 3, 2000, 0, 0)
+        watermark = db.get_last_watermark("-proj")
+        assert watermark == 2000
+        db.close()
+
+    def test_get_last_watermark_breaks_started_at_ties_by_id(self, tmp_data_dir: Path):
+        db = ClawtexDB(tmp_data_dir / "test.db")
+        db.record_consolidation_run("-proj", "completed", 5, 1000, 0, 0)
+        db.record_consolidation_run("-proj", "completed", 3, 2000, 0, 0)
+        db.execute("UPDATE consolidation_runs SET started_at = 123 WHERE scope = '-proj'")
+        db.conn.commit()
         watermark = db.get_last_watermark("-proj")
         assert watermark == 2000
         db.close()

@@ -138,9 +138,27 @@ def _replace_jinja_for_loop(template: str, replacement: str) -> str:
     return result
 
 
-def _validate_response(data: dict) -> bool:
+def _validate_response(data: object) -> bool:
     """Validate that the LLM response has all required fields."""
-    return REQUIRED_FIELDS.issubset(data.keys())
+    if not isinstance(data, dict):
+        return False
+    if not REQUIRED_FIELDS.issubset(data.keys()):
+        return False
+    if not isinstance(data.get("memory_summary"), str):
+        return False
+    if not isinstance(data.get("memory_md"), str):
+        return False
+    skills = data.get("skills")
+    if not isinstance(skills, list):
+        return False
+    for skill in skills:
+        if not isinstance(skill, dict):
+            return False
+        if "name" in skill and not isinstance(skill["name"], str):
+            return False
+        if "skill_md" in skill and not isinstance(skill["skill_md"], str):
+            return False
+    return True
 
 
 def _redact_response(data: dict, redactor: Redactor) -> dict:
@@ -153,6 +171,8 @@ def _redact_response(data: dict, redactor: Redactor) -> dict:
     data["memory_md"] = redactor.redact(data["memory_md"])
 
     for skill in data.get("skills", []):
+        if not isinstance(skill, dict):
+            continue
         if "name" in skill:
             skill["name"] = redactor.redact(skill["name"])
         if "skill_md" in skill:
@@ -210,9 +230,9 @@ async def consolidate_project(
 
         # Step 3: Load Phase 1 outputs from DB
         last_watermark = db.get_last_watermark(scope)
-        phase1_rows = db.get_phase1_outputs(
+        phase1_rows = db.get_phase1_outputs_for_consolidation(
             project_path=project_path,
-            since_watermark=last_watermark,
+            since_cursor=last_watermark,
             limit=config.phase2.max_memories_for_consolidation,
         )
 
@@ -224,8 +244,8 @@ async def consolidate_project(
         # Extract raw_memory text from rows
         phase1_outputs = [row["raw_memory"] for row in phase1_rows]
 
-        # Determine new watermark (max generated_at from the outputs we're processing)
-        new_watermark = max(row["generated_at"] for row in phase1_rows)
+        # Determine new cursor watermark based on stable row ordering.
+        new_watermark = max(row["output_rowid"] for row in phase1_rows)
 
         # Step 4: Load existing memory files (already done in step 2)
 
@@ -276,7 +296,7 @@ async def consolidate_project(
         store.write_memory_md(project_path, data["memory_md"])
 
         for skill in data.get("skills", []):
-            if skill.get("name") and skill.get("skill_md"):
+            if isinstance(skill, dict) and skill.get("name") and skill.get("skill_md"):
                 store.write_skill(project_path, skill["name"], skill["skill_md"])
 
         # Step 9: Record consolidation run in DB
@@ -410,10 +430,8 @@ async def consolidate_global(
 
         # Global skills (if any)
         for skill in data.get("skills", []):
-            if skill.get("name") and skill.get("skill_md"):
-                # Global skills are written to a "global" project path
-                # Using a special convention for global skills
-                store.write_skill("_global", skill["name"], skill["skill_md"])
+            if isinstance(skill, dict) and skill.get("name") and skill.get("skill_md"):
+                store.write_skill(None, skill["name"], skill["skill_md"])
 
         # Record consolidation run
         db.record_consolidation_run(
@@ -449,6 +467,7 @@ async def consolidate_global(
 async def run_phase2(
     config: ClawtexConfig,
     project_path: str | None = None,
+    include_global: bool | None = None,
 ) -> dict:
     """Top-level Phase 2 orchestrator.
 
@@ -458,11 +477,15 @@ async def run_phase2(
     Args:
         config: Application configuration
         project_path: If specified, only consolidate this project
+        include_global: Whether to run global consolidation. Defaults to True for full runs and
+            False for project-scoped runs.
 
     Returns:
         {"projects_consolidated": N, "global": bool}
     """
     worker_id = f"phase2-{uuid.uuid4().hex[:8]}"
+    if include_global is None:
+        include_global = project_path is None
 
     # Set up dependencies
     db_path = config.general.data_dir / "clawtex.db"
@@ -506,14 +529,15 @@ async def run_phase2(
                 if result:
                     projects_consolidated += 1
 
-        # Run global consolidation
-        global_result = await consolidate_global(
-            db=db,
-            store=store,
-            config=config,
-            worker_id=worker_id,
-            redactor=redactor,
-        )
+        global_result = False
+        if include_global:
+            global_result = await consolidate_global(
+                db=db,
+                store=store,
+                config=config,
+                worker_id=worker_id,
+                redactor=redactor,
+            )
 
         return {
             "projects_consolidated": projects_consolidated,

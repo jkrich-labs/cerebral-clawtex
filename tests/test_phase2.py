@@ -382,6 +382,102 @@ class TestConsolidateProject:
         assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in skill_content
         assert "REDACTED" in skill_content
 
+    @pytest.mark.asyncio
+    async def test_non_object_json_response_fails_cleanly(self, setup):
+        """A non-object JSON response should be rejected as invalid schema, not crash."""
+        db, store, config = setup
+        project_path = "-home-user-project-a"
+        _seed_phase1_output(db, "sess-list-1", project_path)
+
+        mock_response = _make_llm_response([])  # type: ignore[arg-type]
+        with patch("cerebral_clawtex.phase2.acompletion", new_callable=AsyncMock, return_value=mock_response):
+            from cerebral_clawtex.phase2 import consolidate_project
+
+            result = await consolidate_project(
+                project_path=project_path,
+                db=db,
+                store=store,
+                config=config,
+                worker_id="test-worker",
+            )
+
+        assert result is False
+        run = db.execute(
+            "SELECT status, error_message FROM consolidation_runs WHERE scope = ? ORDER BY id DESC LIMIT 1",
+            (f"project:{project_path}",),
+        ).fetchone()
+        assert run is not None
+        assert run["status"] == "failed"
+        assert "Invalid JSON" in run["error_message"]
+        assert "Missing required fields" in run["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_skills_type_fails_cleanly(self, setup):
+        """Invalid skills shape should be rejected before write operations."""
+        db, store, config = setup
+        project_path = "-home-user-project-a"
+        _seed_phase1_output(db, "sess-skill-shape-1", project_path)
+
+        bad_shape = {
+            "memory_summary": "## Summary",
+            "memory_md": "# Memory",
+            "skills": "not-a-list",
+        }
+        mock_response = _make_llm_response(bad_shape)
+        with patch("cerebral_clawtex.phase2.acompletion", new_callable=AsyncMock, return_value=mock_response):
+            from cerebral_clawtex.phase2 import consolidate_project
+
+            result = await consolidate_project(
+                project_path=project_path,
+                db=db,
+                store=store,
+                config=config,
+                worker_id="test-worker",
+            )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_same_timestamp_rows_are_not_skipped(self, setup):
+        """Watermarking should not drop rows when multiple outputs share a timestamp."""
+        db, store, config = setup
+        config.phase2.max_memories_for_consolidation = 1
+        project_path = "-home-user-project-a"
+        _seed_phase1_output(db, "sess-wm-a", project_path)
+        _seed_phase1_output(db, "sess-wm-b", project_path)
+        db.execute("UPDATE phase1_outputs SET generated_at = 1700000000 WHERE project_path = ?", (project_path,))
+        db.conn.commit()
+
+        mock_response = _make_llm_response(SAMPLE_LLM_RESPONSE)
+        with patch("cerebral_clawtex.phase2.acompletion", new_callable=AsyncMock, return_value=mock_response):
+            from cerebral_clawtex.phase2 import consolidate_project
+
+            first = await consolidate_project(
+                project_path=project_path,
+                db=db,
+                store=store,
+                config=config,
+                worker_id="test-worker",
+            )
+            second = await consolidate_project(
+                project_path=project_path,
+                db=db,
+                store=store,
+                config=config,
+                worker_id="test-worker",
+            )
+            third = await consolidate_project(
+                project_path=project_path,
+                db=db,
+                store=store,
+                config=config,
+                worker_id="test-worker",
+            )
+
+        assert first is True
+        assert second is True
+        assert third is False
+
 
 class TestConsolidateGlobal:
     """Tests for consolidate_global()."""
@@ -572,6 +668,7 @@ class TestRunPhase2:
 
         # Only the specified project should be consolidated
         assert result["projects_consolidated"] == 1
+        assert result["global"] is False
 
     @pytest.mark.asyncio
     async def test_no_projects_to_consolidate(self, setup):

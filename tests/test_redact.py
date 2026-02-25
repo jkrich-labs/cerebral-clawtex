@@ -81,6 +81,12 @@ class TestGenericSecretRedaction:
         assert "MyP@ssw0rd" not in result
         assert "[REDACTED:password]" in result
 
+    def test_password_capture_redacts_captured_span(self):
+        r = Redactor()
+        text = "password = password"
+        result = r.redact(text)
+        assert result == "password = [REDACTED:password]"
+
 
 class TestFalsePositives:
     def test_normal_code_not_redacted(self):
