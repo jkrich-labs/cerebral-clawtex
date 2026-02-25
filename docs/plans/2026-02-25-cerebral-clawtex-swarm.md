@@ -118,9 +118,9 @@ T0 ──┬── T1 ──┐
   - All 14 tests pass in `tests/test_redact.py`
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_redact.py -v && uv run ruff check src/cerebral_clawtex/redact.py tests/test_redact.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["Implemented Redactor class with compiled regex patterns for 7 secret categories (API keys, bearer tokens, connection strings, private keys, passwords, generic secrets, custom). TDD approach: wrote 15 tests first, verified they failed, then implemented. Fixed two issues from reference code: (1) ghp_/gho_ patterns needed {30,} instead of {36} to match test token lengths; (2) password/generic_secret capture groups needed [^\\s\"'\\[\\]] to exclude brackets and avoid re-matching already-redacted placeholders. All 15 tests pass, ruff check and format clean."]
+- **files_edited**: ["src/cerebral_clawtex/redact.py", "tests/test_redact.py"]
 
 ---
 
