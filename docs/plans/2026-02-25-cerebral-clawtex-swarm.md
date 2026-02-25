@@ -384,9 +384,9 @@ T0 ──┬── T1 ──┐
   - All tests pass
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_hooks.py -v && uv run ruff check src/cerebral_clawtex/hooks.py tests/test_hooks.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["TDD approach: wrote 14 tests first across 4 test classes (TestSessionStartHook: valid JSON with memory files, no memory files no output, only project memory, only global memory, content truncation, navigation instructions included, background extraction spawning; TestResolveProjectPath: resolves from env var, empty project dir; TestBuildNavigationInstructions: MEMORY.md reference, rollout reference, skills reference; TestSpawnBackgroundExtraction: fork-and-detach parent path, child process path with setsid/asyncio.run/exit). Implemented hooks.py with session_start_hook() (loads config, creates MemoryStore, resolves project path from CLAUDE_PROJECT_DIR, reads project+global memory_summary.md, combines with navigation instructions, truncates to ~20000 chars, prints JSON with additional_context, spawns background extraction), _resolve_project_path() (converts / to - encoding), _build_navigation_instructions() (references MEMORY.md, rollout_summaries, skills, global patterns), _spawn_background_extraction() (os.fork+os.setsid to detach child, runs phase1 and optionally phase2). All 14 tests pass, ruff check clean."]
+- **files_edited**: ["src/cerebral_clawtex/hooks.py", "tests/test_hooks.py"]
 
 ---
 
