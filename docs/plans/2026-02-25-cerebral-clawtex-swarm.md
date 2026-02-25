@@ -305,9 +305,9 @@ T0 ──┬── T1 ──┐
   - Global prompts focus on cross-project transferable patterns
   - Templates use Jinja2 placeholders correctly
 - **validation**: `test -f src/cerebral_clawtex/prompts/phase2_system.md && test -f src/cerebral_clawtex/prompts/phase2_user.md && test -f src/cerebral_clawtex/prompts/phase2_global_system.md && test -f src/cerebral_clawtex/prompts/phase2_global_user.md && echo "All Phase 2 prompt files exist"`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["Created all 4 Phase 2 prompt files. phase2_system.md covers: role definition as consolidation agent, INIT vs INCREMENTAL mode instructions, memory_summary.md format spec (user profile max 300 words, general tips max 80 items, routing index, total under 5000 tokens), MEMORY.md format spec (topic clusters with HTML comment YAML headers containing rollout_files and keywords, bullet-point learnings, dedup/prune rules), skills creation trigger (3+ occurrences of a procedure), and JSON output schema with memory_summary/memory_md/skills fields. phase2_user.md uses Jinja2 template with {{ mode }}, {{ project_name }}, conditional {{ existing_memory_summary }} and {{ existing_memory_md }} for INCREMENTAL mode, and {{ phase1_outputs }} loop. phase2_global_system.md mirrors per-project structure but focuses exclusively on cross-project transferable patterns with source_projects metadata instead of rollout_files. phase2_global_user.md templates per-project summaries via {{ project_summaries }} loop with {{ project.name }} and {{ project.summary }}."]
+- **files_edited**: ["src/cerebral_clawtex/prompts/phase2_system.md", "src/cerebral_clawtex/prompts/phase2_user.md", "src/cerebral_clawtex/prompts/phase2_global_system.md", "src/cerebral_clawtex/prompts/phase2_global_user.md"]
 
 ---
 
