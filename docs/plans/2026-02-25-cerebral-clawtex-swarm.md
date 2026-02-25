@@ -488,9 +488,9 @@ T0 ──┬── T1 ──┐
   - Test covers Phase 1, Phase 2, hook output, and secret scanning
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_e2e.py --collect-only && uv run ruff check tests/test_e2e.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["Created tests/test_e2e.py with 6 E2E tests in TestEndToEnd class decorated with @pytest.mark.e2e: test_full_pipeline (seeds fake Claude home with realistic 5-record session JSONL, runs Phase 1 with mocked litellm.acompletion, verifies session marked extracted and rollout summary file exists, runs Phase 2 with mocked acompletion for project+global consolidation, verifies memory_summary.md and MEMORY.md exist for both project and global scopes, scans all output files for secrets using Redactor, runs session_start_hook and verifies JSON output contains memory content and navigation instructions), test_phase1_secret_redaction_in_pipeline (verifies AWS key AKIA... in LLM response is caught by post-scan redaction), test_phase2_secret_redaction_in_pipeline (verifies sk-proj and postgres:// connection string in Phase 2 response are redacted before writing to disk), test_empty_session_produces_no_extraction (verifies no-op LLM response results in skipped status), test_hook_with_no_memories_produces_no_output (verifies hook produces empty output when no memory files exist), test_multiple_sessions_concurrent_extraction (verifies 3 sessions are discovered and extracted concurrently). Added e2e marker to pyproject.toml. All tests use MOCKED litellm.acompletion -- no real API calls. All 6 tests pass, ruff check clean."]
+- **files_edited**: ["tests/test_e2e.py", "pyproject.toml"]
 
 ---
 
