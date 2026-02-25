@@ -157,9 +157,9 @@ T0 ──┬── T1 ──┐
   - All 10 tests pass in `tests/test_storage.py`
   - `ruff check` clean
 - **validation**: `cd ~/dev/repos/cerebral-clawtex && uv run pytest tests/test_storage.py -v && uv run ruff check src/cerebral_clawtex/storage.py tests/test_storage.py`
-- **status**: pending
-- **log**: []
-- **files_edited**: []
+- **status**: completed
+- **log**: ["Implemented MemoryStore class with progressive-disclosure hierarchy (projects/<path>/memory_summary.md, MEMORY.md, rollout_summaries/<slug>.md, skills/<name>/SKILL.md, and global/ equivalents). Atomic writes via tempfile.mkstemp() + os.replace(). Slug sanitization via regex. TDD: wrote 12 tests first (path construction, rollout summary write/sanitize, memory file read/write for project and global scope, skill write, missing file returns None, no leftover .tmp files), all 12 pass. ruff check and ruff format clean."]
+- **files_edited**: ["src/cerebral_clawtex/storage.py", "tests/test_storage.py"]
 
 ---
 
